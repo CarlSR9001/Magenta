@@ -78,12 +78,12 @@ DEFAULT_SIGNAL_CONFIGS: Dict[Signal, SignalConfig] = {
         max_interval_seconds=14400,       # 4 hours max
     ),
     Signal.MAINTENANCE: SignalConfig(
-        base_interval_seconds=900,        # 15 minutes
-        accumulation_rate=0.0006,
-        decay_rate=0.025,
-        emit_threshold=0.5,
+        base_interval_seconds=10800,      # 3 hours before passive pressure
+        accumulation_rate=0.0001,         # Very slow passive accumulation
+        decay_rate=0.02,
+        emit_threshold=0.75,
         priority=6,
-        max_interval_seconds=3600,        # 1 hour max
+        max_interval_seconds=None,        # No forced emission when healthy
     ),
     Signal.BOREDOM: SignalConfig(
         base_interval_seconds=14400,      # 4 hours before boredom kicks in
@@ -94,12 +94,12 @@ DEFAULT_SIGNAL_CONFIGS: Dict[Signal, SignalConfig] = {
         max_interval_seconds=21600,       # 6 hours max
     ),
     Signal.ANXIETY: SignalConfig(
-        base_interval_seconds=1800,       # 30 minutes
-        accumulation_rate=0.001,          # Builds faster
-        decay_rate=0.03,                  # But also decays faster
-        emit_threshold=0.6,
+        base_interval_seconds=21600,      # 6 hours before passive pressure
+        accumulation_rate=0.0001,         # Very slow passive accumulation
+        decay_rate=0.03,                  # Decays quickly after emission
+        emit_threshold=0.8,
         priority=8,                       # High priority
-        max_interval_seconds=7200,        # 2 hours max
+        max_interval_seconds=None,        # No forced emission when healthy
     ),
     Signal.DRIFT: SignalConfig(
         base_interval_seconds=21600,      # 6 hours before checking for drift

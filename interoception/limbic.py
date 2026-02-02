@@ -305,6 +305,8 @@ STEP 2: Review context slots (list_context_slots)
 - Archive resolved threads
 - Clear temporary working slots
 
+If usage is healthy (<50%), record outcome as skipped and move on.
+
 Target: Keep context under 60%. This is housekeeping, not crisis response.""",
 
             Signal.BOREDOM: f"""BOREDOM SIGNAL: Nothing has demanded attention - maybe create something.{forced_note}
