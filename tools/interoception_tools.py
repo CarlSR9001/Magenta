@@ -388,6 +388,8 @@ def interoception_boost_signal(signal: str) -> str:
         "anxiety", "drift", "stale", "uncanny"
     }
 
+    if hasattr(signal, "value"):
+        signal = signal.value
     signal = (signal or "").strip().lower()
     if signal not in valid_signals:
         return json.dumps({
@@ -490,6 +492,10 @@ def interoception_record_outcome(signal: str, outcome: str) -> str:
         "high_engagement", "low_engagement", "acknowledged", "error", "skipped"
     }
 
+    if hasattr(signal, "value"):
+        signal = signal.value
+    if hasattr(outcome, "value"):
+        outcome = outcome.value
     signal = (signal or "").strip().lower()
     outcome = (outcome or "").strip().lower()
     if signal not in valid_signals:
@@ -592,6 +598,8 @@ def interoception_get_signal_history(signal: str) -> str:
         "anxiety", "drift", "stale", "uncanny"
     }
 
+    if hasattr(signal, "value"):
+        signal = signal.value
     signal = (signal or "").strip().lower()
     if signal not in valid_signals:
         return json.dumps({
