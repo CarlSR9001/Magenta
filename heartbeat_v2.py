@@ -23,6 +23,7 @@ To run both during transition:
 """
 
 import argparse
+import json
 import logging
 import signal
 import sys
@@ -50,6 +51,7 @@ logger = logging.getLogger(__name__)
 
 # Marker for interoception state in Letta archival memory
 INTEROCEPTION_STATE_MARKER = "[INTEROCEPTION_STATE]"
+SYNC_STATE_PATH = Path("state/sync_state.json")
 
 
 def sync_quiet_from_archival(client: Letta, agent_id: str, limbic: "LimbicLayer") -> bool:
@@ -139,6 +141,44 @@ def sync_state_to_archival(client: Letta, agent_id: str, state_dict: dict) -> bo
     except Exception as e:
         logger.warning(f"Failed to sync state to archival: {e}")
         return False
+
+
+def write_sync_snapshot(provider: MagentaStateProvider, limbic: LimbicLayer) -> None:
+    """Write a unified local snapshot to keep tools consistent after resets."""
+    try:
+        pending = provider.get_pending_notifications()
+    except Exception:
+        pending = {}
+    try:
+        context_usage = provider.get_context_usage()
+    except Exception:
+        context_usage = 0.0
+    try:
+        state = provider._load_agent_state()
+    except Exception:
+        state = {}
+
+    snapshot = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "context": {
+            "usage_pct": round(context_usage * 100, 2),
+            "usage_fraction": context_usage,
+        },
+        "pending": pending,
+        "processed_notifications_count": len(state.get("processed_notifications", [])),
+        "last_commit_at": state.get("last_commit_at"),
+        "limbic": {
+            "last_wake": limbic.state.last_wake,
+            "total_emissions": limbic.state.total_emissions,
+            "quiet_until": limbic.state.quiet_until,
+        },
+    }
+
+    SYNC_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SYNC_STATE_PATH.write_text(
+        json.dumps(snapshot, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def run_agent_with_signal(
@@ -455,6 +495,7 @@ def main():
 
     # Then sync full state TO archival (but quiet_until is now preserved)
     sync_state_to_archival(client, agent_id, limbic.state.to_dict())
+    write_sync_snapshot(provider, limbic)
 
     tick_count = 0
     last_sync_tick = 0
@@ -468,6 +509,7 @@ def main():
             if sync_quiet_from_archival(client, agent_id, limbic):
                 limbic._save_state()  # Persist the change
             last_quiet_sync_tick = tick_count
+            write_sync_snapshot(provider, limbic)
 
         # Run limbic layer tick
         emitted = limbic.tick()
@@ -479,6 +521,7 @@ def main():
             # Sync state to archival after signal emission
             sync_state_to_archival(client, agent_id, limbic.state.to_dict())
             last_sync_tick = tick_count
+            write_sync_snapshot(provider, limbic)
 
             if args.once:
                 logger.info("--once flag set, exiting after first signal")
@@ -501,6 +544,7 @@ def main():
             if tick_count - last_sync_tick >= 5:
                 sync_state_to_archival(client, agent_id, limbic.state.to_dict())
                 last_sync_tick = tick_count
+                write_sync_snapshot(provider, limbic)
 
         # Sleep until next tick
         if running and not args.once:

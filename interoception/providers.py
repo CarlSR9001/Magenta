@@ -45,6 +45,15 @@ class MagentaStateProvider(ExternalStateProvider):
         self._notification_cache: Dict[str, Any] = {}
         self._cache_time: Optional[datetime] = None
         self._cache_ttl_seconds = 60  # Cache notifications for 1 minute
+        self._sync_state_path = Path("state/sync_state.json")
+
+    def _load_sync_snapshot(self) -> Optional[Dict[str, Any]]:
+        if not self._sync_state_path.exists():
+            return None
+        try:
+            return json.loads(self._sync_state_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
 
     def _get_bsky_api(self):
         """Lazy initialization of Bluesky API."""
@@ -117,10 +126,15 @@ class MagentaStateProvider(ExternalStateProvider):
         if self._is_cache_valid() and "notifications" in self._notification_cache:
             return self._notification_cache["notifications"]
 
+        snapshot = self._load_sync_snapshot()
+        if snapshot and snapshot.get("pending"):
+            return snapshot["pending"]
+
         pending = {
             "bluesky": {"mentions": 0, "replies": 0, "likes": 0, "follows": 0, "other": 0},
             "moltbook": {"comments": 0, "mentions": 0, "other": 0},
             "total": 0,
+            "actionable_total": 0,
             "_note": "Reply on the SAME platform where notification originated",
         }
 
@@ -140,6 +154,8 @@ class MagentaStateProvider(ExternalStateProvider):
 
                 for notif in notifications:
                     uri = notif.get("uri", "")
+                    if notif.get("isRead") is True:
+                        continue
                     if uri in processed:
                         continue
                     reason = notif.get("reason", "other")
@@ -164,6 +180,12 @@ class MagentaStateProvider(ExternalStateProvider):
             sum(pending["bluesky"].values()) +
             sum(pending["moltbook"].values())
         )
+        pending["actionable_total"] = (
+            pending["bluesky"]["mentions"] +
+            pending["bluesky"]["replies"] +
+            pending["moltbook"]["mentions"] +
+            pending["moltbook"]["comments"]
+        )
 
         # Update cache
         self._notification_cache["notifications"] = pending
@@ -177,6 +199,13 @@ class MagentaStateProvider(ExternalStateProvider):
         This is a lightweight check - for detailed breakdown,
         the agent should call view_context_budget directly.
         """
+        snapshot = self._load_sync_snapshot()
+        if snapshot and snapshot.get("context") is not None:
+            try:
+                return float(snapshot["context"].get("usage_fraction", 0.0))
+            except Exception:
+                pass
+
         client = self._get_letta_client()
         if not client or not self._letta_agent_id:
             return 0.0

@@ -19,12 +19,15 @@ class AgentState:
     processed_notifications: List[str] = field(default_factory=list)
     last_commit_at: Optional[str] = None
     recent_commit_times: List[str] = field(default_factory=list)
+    last_action_timestamps: Dict[str, str] = field(default_factory=dict)
     # New state tracking fields
     responded_uris: Set[str] = field(default_factory=set)
     notification_poll_hash: Optional[str] = None
     consecutive_unchanged_polls: int = 0
     per_thread_replies: Dict[str, List[str]] = field(default_factory=dict)
     thread_cooldowns: Dict[str, str] = field(default_factory=dict)
+    open_commitments: List[Dict[str, str]] = field(default_factory=list)
+    recent_post_hashes: List[Dict[str, str]] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -36,11 +39,14 @@ class AgentState:
             "processed_notifications": self.processed_notifications,
             "last_commit_at": self.last_commit_at,
             "recent_commit_times": self.recent_commit_times,
+            "last_action_timestamps": self.last_action_timestamps,
             "responded_uris": list(self.responded_uris),
             "notification_poll_hash": self.notification_poll_hash,
             "consecutive_unchanged_polls": self.consecutive_unchanged_polls,
             "per_thread_replies": self.per_thread_replies,
             "thread_cooldowns": self.thread_cooldowns,
+            "open_commitments": self.open_commitments,
+            "recent_post_hashes": self.recent_post_hashes,
         }
 
     @classmethod
@@ -54,11 +60,14 @@ class AgentState:
             processed_notifications=data.get("processed_notifications", []),
             last_commit_at=data.get("last_commit_at"),
             recent_commit_times=data.get("recent_commit_times", []),
+            last_action_timestamps=data.get("last_action_timestamps", {}),
             responded_uris=set(data.get("responded_uris", [])),
             notification_poll_hash=data.get("notification_poll_hash"),
             consecutive_unchanged_polls=data.get("consecutive_unchanged_polls", 0),
             per_thread_replies=data.get("per_thread_replies", {}),
             thread_cooldowns=data.get("thread_cooldowns", {}),
+            open_commitments=data.get("open_commitments", []),
+            recent_post_hashes=data.get("recent_post_hashes", []),
         )
 
     def mark_commit(self) -> None:

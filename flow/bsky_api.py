@@ -14,8 +14,29 @@ class BskyApi:
         self.username = username or os.getenv("BSKY_USERNAME")
         self.password = password or os.getenv("BSKY_PASSWORD")
         self.pds_host = (pds_uri or os.getenv("PDS_URI", "https://bsky.social")).rstrip("/")
+        if not self.username or not self.password or not pds_uri:
+            try:
+                from config_loader import get_bluesky_config
+                cfg = get_bluesky_config()
+                self.username = self.username or cfg.get("username")
+                self.password = self.password or cfg.get("password")
+                if not pds_uri:
+                    self.pds_host = (cfg.get("pds_uri") or self.pds_host).rstrip("/")
+            except Exception:
+                pass
         self._access_token: Optional[str] = None
         self._did: Optional[str] = None
+
+    def _request(self, method: str, url: str, **kwargs):
+        if "headers" not in kwargs or kwargs["headers"] is None:
+            kwargs["headers"] = self.headers
+        resp = requests.request(method, url, **kwargs)
+        if resp.status_code == 401:
+            self._access_token = None
+            self._did = None
+            kwargs["headers"] = self.headers
+            resp = requests.request(method, url, **kwargs)
+        return resp
 
     def _ensure_session(self) -> None:
         if self._access_token and self._did:
@@ -46,7 +67,7 @@ class BskyApi:
             return handle_or_did
         handle = handle_or_did.lstrip("@")
         url = f"{self.pds_host}/xrpc/com.atproto.identity.resolveHandle"
-        resp = requests.get(url, headers=self.headers, params={"handle": handle}, timeout=10)
+        resp = self._request("GET", url, params={"handle": handle}, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         did = data.get("did")
@@ -57,15 +78,15 @@ class BskyApi:
     # ---- Read-only ----
     def list_notifications(self, limit: int = 20) -> List[Dict[str, Any]]:
         url = f"{self.pds_host}/xrpc/app.bsky.notification.listNotifications"
-        resp = requests.get(url, headers=self.headers, params={"limit": limit}, timeout=10)
+        resp = self._request("GET", url, params={"limit": limit}, timeout=10)
         resp.raise_for_status()
         return resp.json().get("notifications", [])
 
     def get_post_thread(self, uri: str, depth: int = 6, parent_height: int = 2) -> Dict[str, Any]:
         url = f"{self.pds_host}/xrpc/app.bsky.feed.getPostThread"
-        resp = requests.get(
+        resp = self._request(
+            "GET",
             url,
-            headers=self.headers,
             params={"uri": uri, "depth": depth, "parentHeight": parent_height},
             timeout=10,
         )
@@ -75,7 +96,7 @@ class BskyApi:
     def get_profile(self, actor: str) -> Dict[str, Any]:
         did = self.resolve_handle(actor)
         url = f"{self.pds_host}/xrpc/app.bsky.actor.getProfile"
-        resp = requests.get(url, headers=self.headers, params={"actor": did}, timeout=10)
+        resp = self._request("GET", url, params={"actor": did}, timeout=10)
         resp.raise_for_status()
         return resp.json()
 
@@ -90,7 +111,7 @@ class BskyApi:
             record["reply"] = reply
         url = f"{self.pds_host}/xrpc/com.atproto.repo.createRecord"
         payload = {"repo": self.did, "collection": "app.bsky.feed.post", "record": record}
-        resp = requests.post(url, headers=self.headers, json=payload, timeout=10)
+        resp = self._request("POST", url, json=payload, timeout=10)
         resp.raise_for_status()
         return resp.json()
 
@@ -102,7 +123,7 @@ class BskyApi:
         }
         url = f"{self.pds_host}/xrpc/com.atproto.repo.createRecord"
         payload = {"repo": self.did, "collection": "app.bsky.feed.like", "record": record}
-        resp = requests.post(url, headers=self.headers, json=payload, timeout=10)
+        resp = self._request("POST", url, json=payload, timeout=10)
         resp.raise_for_status()
         return resp.json()
 
@@ -115,14 +136,14 @@ class BskyApi:
         }
         url = f"{self.pds_host}/xrpc/com.atproto.repo.createRecord"
         payload = {"repo": self.did, "collection": "app.bsky.graph.follow", "record": record}
-        resp = requests.post(url, headers=self.headers, json=payload, timeout=10)
+        resp = self._request("POST", url, json=payload, timeout=10)
         resp.raise_for_status()
         return resp.json()
 
     def mute(self, actor: str) -> Dict[str, Any]:
         target = self.resolve_handle(actor)
         url = f"{self.pds_host}/xrpc/app.bsky.graph.muteActor"
-        resp = requests.post(url, headers=self.headers, json={"actor": target}, timeout=10)
+        resp = self._request("POST", url, json={"actor": target}, timeout=10)
         resp.raise_for_status()
         return resp.json() if resp.content else {"status": "muted"}
 
@@ -135,6 +156,6 @@ class BskyApi:
         }
         url = f"{self.pds_host}/xrpc/com.atproto.repo.createRecord"
         payload = {"repo": self.did, "collection": "app.bsky.graph.block", "record": record}
-        resp = requests.post(url, headers=self.headers, json=payload, timeout=10)
+        resp = self._request("POST", url, json=payload, timeout=10)
         resp.raise_for_status()
         return resp.json()

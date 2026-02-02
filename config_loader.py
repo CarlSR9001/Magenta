@@ -75,7 +75,12 @@ _config_instance: Optional[ConfigLoader] = None
 def get_config(config_path: str = "config.yaml") -> ConfigLoader:
     global _config_instance
     if _config_instance is None:
-        _config_instance = ConfigLoader(config_path)
+        effective_path = config_path
+        if config_path == "config.yaml":
+            local_path = Path("config.local.yaml")
+            if local_path.exists():
+                effective_path = str(local_path)
+        _config_instance = ConfigLoader(effective_path)
     return _config_instance
 
 

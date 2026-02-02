@@ -112,13 +112,25 @@ class MagentaAgent(Toolset):
 
     def observe(self, state) -> Observation:
         notifications = self.bsky.list_notifications(limit=20)
+        notifications = [n for n in notifications if not n.get("isRead")]
+        # Also filter out anything already marked processed in the local DB
+        try:
+            from notification_db import NotificationDB
+            db = NotificationDB()
+            processed_db = db.get_all_processed_uris()
+            db.close()
+            notifications = [n for n in notifications if n.get("uri") not in processed_db]
+        except Exception:
+            pass
         threads = []
         profiles = []
         reply_refs: Dict[str, Any] = {}
+        threads_by_uri: Dict[str, Any] = {}
+        profiles_by_actor: Dict[str, Any] = {}
         consent_updates: Dict[str, bool] = {}
 
         need_more_context = False
-        for notif in notifications[:5]:
+        for notif in notifications:
             reason = notif.get("reason")
             uri = notif.get("uri")
             actor = notif.get("author", {}).get("handle") or notif.get("author", {}).get("did")
@@ -130,13 +142,16 @@ class MagentaAgent(Toolset):
                     consent_updates[actor] = True
             if actor:
                 try:
-                    profiles.append(self.bsky.get_profile(actor))
+                    profile = self.bsky.get_profile(actor)
+                    profiles.append(profile)
+                    profiles_by_actor[actor] = profile
                 except Exception as exc:
                     logger.warning("Failed to fetch profile for %s: %s", actor, exc)
             if reason in {"mention", "reply"} and uri:
                 try:
                     thread = self.bsky.get_post_thread(uri, depth=6, parent_height=3)
                     threads.append(thread)
+                    threads_by_uri[uri] = thread
                     reply_ref = _build_reply_ref(thread)
                     if reply_ref:
                         reply_refs[uri] = reply_ref
@@ -166,7 +181,12 @@ class MagentaAgent(Toolset):
             notifications=filtered,
             threads=threads,
             profiles=profiles,
-            local_context={"reply_refs": reply_refs, "consent_updates": consent_updates},
+            local_context={
+                "reply_refs": reply_refs,
+                "consent_updates": consent_updates,
+                "threads_by_uri": threads_by_uri,
+                "profiles_by_actor": profiles_by_actor,
+            },
             need_more_context=need_more_context,
             skip_poll_suggested=skip_poll_suggested,
         )
@@ -202,18 +222,34 @@ class MagentaAgent(Toolset):
 
         reply_refs = observation.local_context.get("reply_refs", {})
         consent_updates = observation.local_context.get("consent_updates", {})
+        threads_by_uri = observation.local_context.get("threads_by_uri", {})
+        profiles_by_actor = observation.local_context.get("profiles_by_actor", {})
         for actor, consented in consent_updates.items():
             if consented:
                 state.consented_users[actor] = True
-        reply_ref = reply_refs.get(top.get("uri"))
+        top_uri = top.get("uri")
+        reply_ref = reply_refs.get(top_uri)
 
         actor_id = top.get("author", {}).get("handle") or top.get("author", {}).get("did")
-        profile = observation.profiles[:1][0] if observation.profiles else {}
+        profile = profiles_by_actor.get(actor_id) if actor_id else None
+        if not profile and actor_id:
+            try:
+                profile = self.bsky.get_profile(actor_id)
+            except Exception as exc:
+                logger.warning("Failed to fetch profile for %s: %s", actor_id, exc)
+        if not profile:
+            profile = observation.profiles[:1][0] if observation.profiles else {}
         description = (profile.get("description") or "").lower() if isinstance(profile, dict) else ""
         handle_text = (actor_id or "").lower()
         is_bot = any(token in description for token in ["bot", "agent", "ai", "automated"]) or any(token in handle_text for token in ["bot", "agent", "ai"])
         consented = bool(state.consented_users.get(actor_id))
         prior_replies = int(state.per_user_counts.get(actor_id, 0)) if actor_id else 0
+        top_thread = threads_by_uri.get(top_uri)
+        if not top_thread and top.get("reason") in {"mention", "reply"} and top_uri:
+            try:
+                top_thread = self.bsky.get_post_thread(top_uri, depth=6, parent_height=3)
+            except Exception as exc:
+                logger.warning("Failed to fetch thread for %s: %s", top_uri, exc)
 
         prompt = {
             "instruction": (
@@ -224,8 +260,8 @@ class MagentaAgent(Toolset):
                 "optionality, cost, risk, fatigue, risk_flags (list), abort_if (list)."
             ),
             "notification": notif_summary,
-            "thread": observation.threads[:1],
-            "profiles": observation.profiles[:1],
+            "thread": [top_thread] if top_thread else [],
+            "profiles": [profile] if profile else [],
             "policy": "Be cautious. Prefer queue/ignore for low salience or high risk. Avoid harassment, sensitive topics, or unclear targets.",
             "constraints": [
                 "Tools are not thoughts. Drafts are required before any side effect.",
@@ -302,13 +338,14 @@ class MagentaAgent(Toolset):
                         confidence=float(item.get("confidence", 0.0)),
                         metadata={
                             "notification_id": top.get("uri"),
-                            "target_uri": target_uri,
-                            "cid": top.get("cid"),
-                            "actor": top.get("author", {}).get("handle") or top.get("author", {}).get("did"),
-                            "reply_to": reply_ref,
-                        },
-                    )
+                        "target_uri": target_uri,
+                        "cid": top.get("cid"),
+                        "actor": top.get("author", {}).get("handle") or top.get("author", {}).get("did"),
+                        "reply_to": reply_ref,
+                        "root_uri": reply_ref.get("root", {}).get("uri") if reply_ref else None,
+                    },
                 )
+            )
 
         if not candidates:
             candidates.append(

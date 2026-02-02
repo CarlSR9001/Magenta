@@ -60,15 +60,29 @@ def hypercontext_map() -> str:
     context_tokens = 0
     max_tokens = 128000
     message_count = 0
+    sync_context = None
     try:
-        agent = client.agents.retrieve(agent_id=agent_id)
-        messages = list(client.agents.messages.list(agent_id=agent_id, limit=200))
-        message_count = len(messages)
-        # Estimate: 500 tokens per message average
-        context_tokens = message_count * 500
-        context_pct = min(100, int((context_tokens / max_tokens) * 100))
+        from pathlib import Path
+        sync_path = Path("state/sync_state.json")
+        if sync_path.exists():
+            sync_context = json.loads(sync_path.read_text(encoding="utf-8"))
     except Exception:
-        pass
+        sync_context = None
+    if sync_context and sync_context.get("context"):
+        try:
+            context_pct = int(sync_context["context"].get("usage_pct", 0))
+        except Exception:
+            context_pct = 0
+    else:
+        try:
+            agent = client.agents.retrieve(agent_id=agent_id)
+            messages = list(client.agents.messages.list(agent_id=agent_id, limit=200))
+            message_count = len(messages)
+            # Estimate: 500 tokens per message average
+            context_tokens = message_count * 500
+            context_pct = min(100, int((context_tokens / max_tokens) * 100))
+        except Exception:
+            pass
 
     # 2. Context slots
     slots = []
@@ -112,6 +126,14 @@ def hypercontext_map() -> str:
                 break
     except Exception:
         pass
+
+    if sync_context and sync_context.get("limbic"):
+        try:
+            last_wake = sync_context["limbic"].get("last_wake", last_wake)
+            total_emissions = sync_context["limbic"].get("total_emissions", total_emissions)
+            quiet_until = sync_context["limbic"].get("quiet_until", quiet_until)
+        except Exception:
+            pass
 
     # 4. Recent tool activity (from messages)
     tool_counts = {}

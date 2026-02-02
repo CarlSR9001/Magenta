@@ -124,6 +124,54 @@ python /home/shankatsu/magenta/run_queue.py
 python /home/shankatsu/magenta/run_autonomy.py --min-seconds 45 --max-seconds 120
 ```
 
+## Pilot bridge (drive harness + Letta admin)
+Run the pilot runner (file queue):
+```bash
+python /home/shankatsu/magenta/pilot_runner.py --follow
+```
+
+Append commands to `state/pilot_commands.jsonl`, results land in `state/pilot_outputs.jsonl`.
+
+Example: fetch recent agent messages (read-only mirror)
+```json
+{"id":"msg-1","type":"letta_admin","op":"get_recent_messages","args":{"limit":20}}
+```
+
+Example: clean mirror (assistant/user only)
+```json
+{"id":"msg-2","type":"letta_admin","op":"get_recent_messages_clean","args":{"limit":20}}
+```
+
+Example: talk to Magenta (via Letta messages)
+```json
+{"id":"talk-1","type":"letta_admin","op":"send_message","args":{"content":"Quick check-in: summarize your top 3 open commitments."}}
+```
+
+Example: list core memory blocks
+```json
+{"id":"mem-1","type":"letta_admin","op":"list_blocks","args":{"include_content":false}}
+```
+
+Example: read a block
+```json
+{"id":"mem-2","type":"letta_admin","op":"get_block","args":{"label":"zeitgeist","line_numbers":true}}
+```
+
+Example: replace lines in a block
+```json
+{"id":"mem-3","type":"letta_admin","op":"replace_block_lines","args":{"label":"zeitgeist","start_line":1,"end_line":1,"new_content":"**Active Discourse Themes (2026-02-02):**"}}
+```
+
+Example: queue a draft
+```json
+{"id":"draft-1","type":"harness_action","mode":"queue","draft":{"type":"reply","target_uri":"at://...","text":"Hello","intent":"follow up","confidence":0.8,"salience":0.5,"metadata":{"reply_to":{"root":{"uri":"...","cid":"..."},"parent":{"uri":"...","cid":"..."}}}}}
+```
+
+Example: direct commit (bypass preflight)
+```json
+{"id":"commit-1","type":"harness_action","mode":"commit","bypass_preflight":true,"draft":{"type":"post","text":"Quick note","intent":"pilot test","confidence":1.0,"salience":0.2}}
+```
+
 ## Upload tools + configure Letta rules
 1. Register tools with Letta:
 ```bash

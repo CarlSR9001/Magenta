@@ -38,7 +38,22 @@ def build_rules():
         {
             "type": "max_count_per_step",
             "tool_name": "bsky_list_notifications",
-            "max_count_limit": 3,
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "bsky_mark_notifications_batch",
+            "max_count_limit": 1,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "bsky_mark_notification_processed",
+            "max_count_limit": 5,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "bsky_get_profile",
+            "max_count_limit": 5,
         },
         {
             "type": "max_count_per_step",
@@ -48,6 +63,41 @@ def build_rules():
         {
             "type": "max_count_per_step",
             "tool_name": "get_local_time",
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "preflight_check",
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "outbox_create_draft",
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "outbox_update_draft",
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "outbox_mark_aborted",
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "outbox_finalize",
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "view_context_budget",
+            "max_count_limit": 2,
+        },
+        {
+            "type": "max_count_per_step",
+            "tool_name": "view_context_usage",
             "max_count_limit": 2,
         },
     ]

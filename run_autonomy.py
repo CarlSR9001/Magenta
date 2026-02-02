@@ -73,8 +73,16 @@ def main() -> None:
         if args.max_runs and runs >= args.max_runs:
             break
 
+        cycle_action_chance = args.action_chance
+        try:
+            state = state_store.load()
+            if getattr(state, "consecutive_unchanged_polls", 0) >= 3:
+                cycle_action_chance = min(cycle_action_chance, 0.2)
+        except Exception:
+            pass
+
         roll = random.random()
-        if roll < args.action_chance:
+        if roll < cycle_action_chance:
             run_once(toolset, state_store, telemetry, outbox)
         elif roll < args.action_chance + args.queue_chance:
             run_queue_once(toolset, state_store, telemetry, outbox)

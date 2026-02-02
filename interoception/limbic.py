@@ -102,7 +102,9 @@ class LimbicLayer:
         # SOCIAL boost from pending notifications
         pending = self.external.get_pending_notifications()
         # Handle both old format (flat dict) and new format (nested with 'total')
-        if isinstance(pending.get("total"), int):
+        if isinstance(pending.get("actionable_total"), int):
+            total_pending = pending["actionable_total"]
+        elif isinstance(pending.get("total"), int):
             total_pending = pending["total"]
         else:
             # Old format: sum all integer values

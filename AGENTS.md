@@ -16,6 +16,7 @@ This folder is a reusable skeleton for creating new stateful agents. It is inten
 - `run_agent.py`: single-cycle runner for the flow.
 - `run_queue.py`: queue processor for drafts.
 - `run_autonomy.py`: autonomous loop with jitter + RNG.
+- `pilot_runner.py`: pilot bridge (file-queue control + Letta admin ops).
 - `configure_tool_rules.py`: applies Letta tool rules.
 - `SYSTEM_PROMPT.md`: system prompt for Magenta.
 - `agent.py`: concrete Magenta agent using Letta + Bluesky APIs.
@@ -24,12 +25,45 @@ This folder is a reusable skeleton for creating new stateful agents. It is inten
 - New APIs go in `clients/` with a tiny surface area (connect/login + 1–2 helpful helpers).
 - Tool functions should be standalone and not import large app modules.
 - Keep config keys stable; document them in `config.example.yaml`.
+- Prefer `pilot_runner.py` for “manual override” or maintenance actions; it can read/write Letta memory blocks and send messages without altering core flow.
+- Use `config.local.yaml` for secrets; `config.yaml` is now placeholder-only.
 
 ## Adding a new API
 1. Create `clients/<name>.py`.
 2. Add config keys in `config.example.yaml` and accessors in `config_loader.py`.
 3. Export helpers from `clients/__init__.py`.
 4. Document usage in `README.md`.
+
+---
+
+## Pilot bridge (manual override / maintenance)
+
+`pilot_runner.py` reads commands from `state/pilot_commands.jsonl` and writes results to `state/pilot_outputs.jsonl`.
+It supports:
+- `letta_admin` ops (read/write memory blocks, passages, tool env, send messages).
+- `harness_action` ops (queue/commit drafts).
+
+This bridge is designed to make Magenta a “suit” you can step into for maintenance or precise interventions.
+
+### Example commands
+```json
+{"id":"talk-1","type":"letta_admin","op":"send_message","args":{"content":"Summarize your top 3 open commitments."}}
+{"id":"mem-1","type":"letta_admin","op":"list_blocks","args":{"include_content":false}}
+{"id":"mem-2","type":"letta_admin","op":"get_block","args":{"label":"zeitgeist","line_numbers":true}}
+{"id":"mem-3","type":"letta_admin","op":"replace_block_lines","args":{"label":"zeitgeist","start_line":1,"end_line":1,"new_content":"**Active Discourse Themes (2026-02-02):**"}}
+```
+
+---
+
+## State sync snapshot (consistency after context clears)
+
+`heartbeat_v2.py` writes a unified snapshot to `state/sync_state.json` each tick and after signal handling.
+This is used to keep context/notifications/limbic state consistent across tools:
+- `interoception.providers.MagentaStateProvider` prefers this snapshot for pending + context usage.
+- `tools/hypercontext.py` uses it for context/limbic display.
+- `flow/preflight.py` blocks commits if the snapshot is stale (default 5 minutes).
+
+If you see inconsistent context or stale pending counts after a reset, check `state/sync_state.json` first.
 
 ---
 

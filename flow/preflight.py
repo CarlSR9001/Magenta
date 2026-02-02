@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from datetime import datetime, timezone
+from pathlib import Path
+import json
 
 try:
     import grapheme
@@ -23,6 +25,8 @@ DEFAULT_POLICY = {
     "max_commits_per_hour": 5,
     "cooldown_hours_after_burst": 3,
     "require_human_on_risk": ["harassment", "personal_data", "political", "escalation", "high"],
+    "sync_state_max_age_seconds": 300,
+    "require_fresh_sync": True,
 }
 
 
@@ -31,6 +35,25 @@ def validate_draft(draft: Draft, state: AgentState, policy: Optional[Dict] = Non
     reasons = []
     suggested_edits = []
     require_human = False
+
+    if policy.get("require_fresh_sync", True):
+        sync_path = Path("state/sync_state.json")
+        if sync_path.exists():
+            try:
+                sync_data = json.loads(sync_path.read_text(encoding="utf-8"))
+                ts = sync_data.get("timestamp")
+                if ts:
+                    now = datetime.now(timezone.utc)
+                    synced_at = datetime.fromisoformat(ts)
+                    max_age = policy.get("sync_state_max_age_seconds", 300)
+                    if (now - synced_at).total_seconds() > max_age:
+                        reasons.append("sync_state_stale")
+                else:
+                    reasons.append("sync_state_missing_timestamp")
+            except Exception:
+                reasons.append("sync_state_read_failed")
+        else:
+            reasons.append("sync_state_missing")
 
     if draft.confidence < policy.get("min_confidence", 0.55):
         reasons.append("confidence_below_threshold")
@@ -41,6 +64,51 @@ def validate_draft(draft: Draft, state: AgentState, policy: Optional[Dict] = Non
         elif count_graphemes(draft.text) > policy.get("max_post_length", 300):
             reasons.append("text_too_long")
             suggested_edits.append("shorten_text")
+        if draft.metadata and draft.metadata.get("quote_uri"):
+            quote_uri = str(draft.metadata.get("quote_uri"))
+            extra = count_graphemes(f"\n\n🔗 {quote_uri}")
+            if count_graphemes(draft.text) + extra > policy.get("max_post_length", 300):
+                reasons.append("text_too_long_with_quote")
+                suggested_edits.append("shorten_text")
+
+    if draft.type in {DraftType.POST, DraftType.QUOTE} and draft.text:
+        lowered = draft.text.lower()
+        has_url = "http://" in lowered or "https://" in lowered
+        has_artifact_override = bool(draft.metadata.get("artifact_ok")) if draft.metadata else False
+        meta_markers = [
+            "system matured",
+            "lesson learned",
+            "broke loop",
+            "signal loop",
+            "context",
+            "pressure",
+            "maintenance",
+            "uncanny",
+            "anxiety",
+            "social signal",
+            "interoception",
+            "hypercontext",
+        ]
+        if any(marker in lowered for marker in meta_markers) and not has_url and not has_artifact_override:
+            reasons.append("meta_needs_artifact")
+
+    if draft.type in {DraftType.POST, DraftType.REPLY, DraftType.QUOTE} and draft.text:
+        import hashlib
+        from datetime import timedelta
+
+        text_hash = hashlib.sha256(draft.text.strip().lower().encode("utf-8")).hexdigest()[:16]
+        recent = state.recent_post_hashes or []
+        now = datetime.now(timezone.utc)
+        for entry in recent:
+            try:
+                if entry.get("hash") != text_hash:
+                    continue
+                ts = datetime.fromisoformat(entry.get("ts", ""))
+                if (now - ts) <= timedelta(hours=2):
+                    reasons.append("duplicate_recent_post")
+                    break
+            except Exception:
+                continue
 
     risk_flags = set(draft.risk_flags)
     for risk in policy.get("require_human_on_risk", []):
@@ -48,8 +116,19 @@ def validate_draft(draft: Draft, state: AgentState, policy: Optional[Dict] = Non
             require_human = True
             reasons.append(f"risk_flag:{risk}")
 
-    if draft.target_uri and draft.target_uri in state.last_action_hashes:
-        reasons.append("duplicate_target")
+    if draft.target_uri:
+        # Prefer time-bounded dedupe if timestamps available
+        ttl_hours = policy.get("dedupe_ttl_hours", 24)
+        if ttl_hours and state.last_action_timestamps.get(draft.target_uri):
+            try:
+                last_ts = datetime.fromisoformat(state.last_action_timestamps[draft.target_uri])
+                now = datetime.now(timezone.utc)
+                if (now - last_ts).total_seconds() <= ttl_hours * 3600:
+                    reasons.append("duplicate_target_recent")
+            except Exception:
+                pass
+        elif draft.target_uri in state.last_action_hashes:
+            reasons.append("duplicate_target")
 
     notification_id = draft.metadata.get("notification_id") if draft.metadata else None
     if notification_id and notification_id in state.processed_notifications:
