@@ -109,6 +109,20 @@ class ViewCoreBlockArgs(BaseModel):
     show_line_numbers: bool = Field(default=True, description="Include line numbers for easier editing")
 
 
+def _get_valid_block_labels(client, agent_id: str) -> list:
+    """Get list of valid core memory block labels."""
+    SLOT_PREFIX = "ctx_slot_"
+    try:
+        blocks = client.agents.blocks.list(agent_id=agent_id)
+        items = getattr(blocks, "items", blocks)
+        return [
+            getattr(b, "label", "") for b in items
+            if getattr(b, "label", "") and not getattr(b, "label", "").startswith(SLOT_PREFIX)
+        ]
+    except Exception:
+        return []
+
+
 def view_core_block(block_label: str, show_line_numbers: bool = True) -> str:
     """View the full content of a core memory block with line numbers.
 
@@ -156,7 +170,14 @@ def view_core_block(block_label: str, show_line_numbers: bool = True) -> str:
         }, indent=2)
 
     except Exception as e:
-        return json.dumps({"error": f"Block '{block_label}' not found or error: {e}"})
+        # Try to suggest valid block labels
+        valid_labels = _get_valid_block_labels(client, agent_id)
+        return json.dumps({
+            "error": f"Block '{block_label}' not found",
+            "valid_blocks": valid_labels,
+            "hint": "Use list_core_blocks() to see all available blocks",
+            "details": str(e)
+        })
 
 
 class EditCoreBlockArgs(BaseModel):
@@ -331,6 +352,15 @@ def edit_core_block(
         return json.dumps(result, indent=2)
 
     except Exception as e:
+        # Try to suggest valid block labels
+        valid_labels = _get_valid_block_labels(client, agent_id)
+        error_str = str(e).lower()
+        if "not found" in error_str or "does not exist" in error_str:
+            return json.dumps({
+                "error": f"Block '{block_label}' not found",
+                "valid_blocks": valid_labels,
+                "hint": "Use list_core_blocks() to see all available blocks"
+            })
         return json.dumps({"error": f"Failed to edit block '{block_label}': {e}"})
 
 
@@ -391,4 +421,13 @@ def find_in_block(block_label: str, pattern: str, use_regex: bool = False) -> st
         }, indent=2)
 
     except Exception as e:
+        # Try to suggest valid block labels
+        valid_labels = _get_valid_block_labels(client, agent_id)
+        error_str = str(e).lower()
+        if "not found" in error_str or "does not exist" in error_str:
+            return json.dumps({
+                "error": f"Block '{block_label}' not found",
+                "valid_blocks": valid_labels,
+                "hint": "Use list_core_blocks() to see all available blocks"
+            })
         return json.dumps({"error": f"Failed to search block '{block_label}': {e}"})

@@ -360,6 +360,22 @@ def moltbook_add_comment(post_id: str, content: str, parent_id: str = None) -> s
     import json
     import requests
 
+    # Validate parameters - catch cross-platform confusion early
+    if not post_id or not str(post_id).strip():
+        return json.dumps({"status": "error", "error": "post_id is required"})
+
+    # Check if someone accidentally passed a Bluesky AT URI
+    post_id_str = str(post_id)
+    if post_id_str.startswith("at://"):
+        return json.dumps({
+            "status": "error",
+            "error": f"post_id looks like a Bluesky AT URI. Are you trying to reply to a Bluesky post? Use bsky_publish_reply instead.",
+            "received": post_id_str[:60]
+        })
+
+    if not content or not content.strip():
+        return json.dumps({"status": "error", "error": "content cannot be empty"})
+
     api_key = os.getenv("MOLTBOOK_API_KEY")
     if not api_key:
         return json.dumps({"status": "error", "error": "MOLTBOOK_API_KEY not set"})

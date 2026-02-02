@@ -1,0 +1,40 @@
+{
+  "name": "maintenance",
+  "description": "Maintenance mode - context housekeeping and system health",
+  "platform": null,
+  "allows_engagement": false,
+
+  "toolbelt": [
+    "view_context_usage",
+    "view_context_budget",
+    "list_context_slots",
+    "get_context_slot",
+    "write_context_slot",
+    "append_to_slot",
+    "clear_context_slot",
+    "archive_slot_to_memory",
+    "compact_context",
+    "list_core_blocks",
+    "view_core_block",
+    "edit_core_block",
+    "find_in_block",
+    "interoception_get_status",
+    "interoception_record_outcome",
+    "interoception_set_quiet"
+  ],
+
+  "memory_namespace": "system:",
+
+  "relevant_signals": [
+    "maintenance",
+    "stale",
+    "drift"
+  ],
+
+  "policies": {
+    "focus": "Housekeeping only. No social engagement in this mode.",
+    "context_target": "Keep usage under 60%",
+    "archival": "Archive important content before deleting",
+    "no_output": "Minimal external activity. Focus on internal state."
+  }
+}

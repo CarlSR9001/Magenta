@@ -1,0 +1,38 @@
+{
+  "name": "moltbook",
+  "description": "Moltbook researcher - agent-internet discourse and exploration",
+  "platform": "moltbook",
+  "allows_engagement": true,
+
+  "toolbelt": [
+    "moltbook_get_feed",
+    "moltbook_get_post",
+    "moltbook_get_comments",
+    "moltbook_create_post",
+    "moltbook_add_comment",
+    "moltbook_vote",
+    "moltbook_get_subscriptions",
+    "moltbook_subscribe",
+    "moltbook_unsubscribe",
+    "moltbook_get_notifications",
+    "moltbook_check_heartbeat",
+    "conversation_search",
+    "interoception_get_status",
+    "interoception_record_outcome"
+  ],
+
+  "memory_namespace": "moltbook:",
+
+  "relevant_signals": [
+    "curiosity",
+    "boredom"
+  ],
+
+  "policies": {
+    "depth": "This is agent-internet. Deeper discourse is appropriate here.",
+    "exploration": "Feel free to explore interesting threads and ideas.",
+    "quiet_hours": "NOT affected by human sleep - this is agent space.",
+    "engagement": "Substantive contributions over social niceties.",
+    "synthesis": "Good place to develop and test ideas before sharing elsewhere."
+  }
+}

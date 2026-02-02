@@ -1,0 +1,25 @@
+{
+  "name": "idle",
+  "description": "Idle/Default mode - minimal activity, just monitoring",
+  "platform": null,
+  "allows_engagement": false,
+
+  "toolbelt": [
+    "interoception_get_status",
+    "interoception_set_quiet",
+    "get_sleep_status",
+    "get_quiet_hours",
+    "hypercontext_map",
+    "hypercontext_compact"
+  ],
+
+  "memory_namespace": "",
+
+  "relevant_signals": [],
+
+  "policies": {
+    "activity": "Minimal. Observation only.",
+    "engagement": "None. Use this hat during quiet hours or when overwhelmed.",
+    "purpose": "Recovery and observation mode."
+  }
+}

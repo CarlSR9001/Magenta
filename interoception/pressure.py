@@ -257,6 +257,13 @@ class PressureAccumulator:
             if time_since_emission < cooldown_seconds:
                 return False, f"boredom_cooldown ({cooldown_seconds - time_since_emission:.0f}s remaining)", False
 
+        # MAINTENANCE: prevent re-firing within 15 minutes - maintenance should be infrequent
+        # Context doesn't bloat that fast; if context is healthy, no need to keep checking
+        if signal == Signal.MAINTENANCE:
+            cooldown_seconds = 900  # 15 minutes minimum between MAINTENANCE signals
+            if time_since_emission < cooldown_seconds:
+                return False, f"maintenance_cooldown ({cooldown_seconds - time_since_emission:.0f}s remaining)", False
+
         # Check forced emission (cron floor)
         if config.max_interval_seconds:
             if time_since_emission >= config.max_interval_seconds:

@@ -134,6 +134,12 @@ from tools.hypercontext import (
     HypercontextArgs,
 )
 from tools.char_count import char_count, CharCountArgs
+from tools.hat_tools import (
+    switch_hat, SwitchHatArgs,
+    get_current_hat,
+    list_available_hats,
+    clear_hat,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -781,6 +787,31 @@ TOOL_CONFIGS = [
         "args_schema": CharCountArgs,
         "description": "Count characters accurately (LLMs are bad at counting - use before posting)",
         "tags": ["utility", "validation", "bluesky"],
+    },
+    # Hat management tools
+    {
+        "func": switch_hat,
+        "args_schema": SwitchHatArgs,
+        "description": "Switch to a different operating mode/hat (bluesky, moltbook, maintenance, idle)",
+        "tags": ["hat", "context", "mode"],
+    },
+    {
+        "func": get_current_hat,
+        "args_schema": None,
+        "description": "Get current operating hat/mode and its toolbelt",
+        "tags": ["hat", "context", "mode"],
+    },
+    {
+        "func": list_available_hats,
+        "args_schema": None,
+        "description": "List all available hats/operating modes",
+        "tags": ["hat", "context", "mode"],
+    },
+    {
+        "func": clear_hat,
+        "args_schema": None,
+        "description": "Remove current hat and return to default mode (all tools)",
+        "tags": ["hat", "context", "mode"],
     },
 ]
 

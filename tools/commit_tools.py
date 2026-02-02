@@ -29,6 +29,15 @@ def bsky_publish_reply(
     import re
     from datetime import datetime, timezone
 
+    # Validate URI/CID parameters BEFORE attempting API calls
+    # This catches cross-platform confusion (e.g., Moltbook post IDs passed to Bluesky)
+    if not parent_uri or not parent_uri.strip():
+        return "Error: parent_uri is required. This must be an AT Protocol URI (at://did:plc:.../app.bsky.feed.post/...)"
+    if not parent_uri.startswith("at://"):
+        return f"Error: parent_uri must be an AT Protocol URI starting with 'at://'. Got: '{parent_uri[:50]}...'. Are you trying to reply to a Moltbook post? Use moltbook_add_comment instead."
+    if not parent_cid or not parent_cid.strip():
+        return "Error: parent_cid is required. Get this from the notification or bsky_get_thread."
+
     # Auth
     username = os.getenv("BSKY_USERNAME")
     password = os.getenv("BSKY_PASSWORD")

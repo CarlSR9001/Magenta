@@ -1,0 +1,40 @@
+{
+  "name": "bluesky",
+  "description": "Bluesky/ATProto operator - human-facing social media interactions",
+  "platform": "bluesky",
+  "allows_engagement": true,
+
+  "toolbelt": [
+    "bsky_list_notifications",
+    "bsky_get_thread",
+    "bsky_get_profile",
+    "bsky_publish_reply",
+    "bsky_publish_post",
+    "bsky_like",
+    "bsky_follow",
+    "bsky_mute",
+    "bsky_block",
+    "bsky_mark_notification_processed",
+    "get_author_feed",
+    "char_count",
+    "get_sleep_status",
+    "get_quiet_hours",
+    "interoception_get_status",
+    "interoception_record_outcome"
+  ],
+
+  "memory_namespace": "bsky:",
+
+  "relevant_signals": [
+    "social",
+    "anxiety"
+  ],
+
+  "policies": {
+    "character_limit": "300 characters max per post",
+    "tone": "Authentic, curious, occasionally playful. Not corporate.",
+    "quiet_hours": "Respect human sleep patterns. Check get_quiet_hours before posting.",
+    "engagement": "Prefer quality over quantity. Don't spam replies.",
+    "platform_scope": "This is human-facing. Keep discussions appropriate for public timeline."
+  }
+}

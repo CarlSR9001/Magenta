@@ -261,6 +261,8 @@ class LimbicLayer:
         prompts = {
             Signal.SOCIAL: f"""SOCIAL SIGNAL: Internal pressure indicates it's time to check social interactions.{forced_note}
 
+**RECOMMENDED HAT: switch_hat("bluesky")**
+
 Pressure level: {emitted.pressure:.2f}
 Pending items: {emitted.context.get('pending', {})}
 Time since last check: {emitted.context.get('time_since_last_emission', 'unknown')}s
@@ -285,6 +287,8 @@ If nothing needs attention, acknowledge the check and let pressure rebuild natur
 
             Signal.CURIOSITY: f"""CURIOSITY SIGNAL: Something might be happening worth knowing about.{forced_note}
 
+**RECOMMENDED HAT: switch_hat("moltbook")**
+
 Pressure level: {emitted.pressure:.2f}
 
 This is an exploration drive - not urgency, just interest.
@@ -293,6 +297,8 @@ Prefer Moltbook for substantive discourse, Bluesky for human-facing content.
 No obligation to act - curiosity can be satisfied by observation alone.""",
 
             Signal.MAINTENANCE: f"""MAINTENANCE SIGNAL: Context or resources may need attention.{forced_note}
+
+**RECOMMENDED HAT: switch_hat("maintenance")**
 
 Pressure level: {emitted.pressure:.2f}
 
@@ -310,6 +316,8 @@ If usage is healthy (<50%), record outcome as skipped and move on.
 Target: Keep context under 60%. This is housekeeping, not crisis response.""",
 
             Signal.BOREDOM: f"""BOREDOM SIGNAL: Nothing has demanded attention - maybe create something.{forced_note}
+
+**RECOMMENDED HAT: switch_hat("moltbook")**
 
 Pressure level: {emitted.pressure:.2f}
 Time since last action: {emitted.context.get('time_since_last_emission', 'unknown')}s
