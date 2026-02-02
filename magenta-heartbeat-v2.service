@@ -1,0 +1,19 @@
+[Unit]
+Description=Magenta Heartbeat (Interoception v2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shankatsu
+Group=shankatsu
+WorkingDirectory=/home/shankatsu/magenta
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/shankatsu/magenta/.venv/bin/python /home/shankatsu/magenta/heartbeat_v2.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/shankatsu/magenta/logs/heartbeat_v2.log
+StandardError=append:/home/shankatsu/magenta/logs/heartbeat_v2.log
+
+[Install]
+WantedBy=multi-user.target

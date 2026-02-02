@@ -1,0 +1,7 @@
+atproto==0.0.61
+grapheme==0.6.0
+letta-client==0.1.235
+pydantic==2.11.7
+pyyaml==6.0.2
+requests==2.32.4
+rich==14.1.0
