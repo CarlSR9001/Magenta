@@ -112,18 +112,20 @@ def hypercontext_map() -> str:
         passages = client.agents.passages.list(
             agent_id=agent_id,
             search="[INTEROCEPTION_STATE]",
-            limit=5
+            limit=10
         )
         items = getattr(passages, "items", passages) if passages else []
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith("[INTEROCEPTION_STATE]"):
-                state = json.loads(text[len("[INTEROCEPTION_STATE]"):].strip())
-                pressures = state.get("pressures", {})
-                total_emissions = state.get("total_emissions", 0)
-                last_wake = state.get("last_wake")
-                quiet_until = state.get("quiet_until")
-                break
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith("[INTEROCEPTION_STATE]")]
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            state = json.loads(text[len("[INTEROCEPTION_STATE]"):].strip())
+            pressures = state.get("pressures", {})
+            total_emissions = state.get("total_emissions", 0)
+            last_wake = state.get("last_wake")
+            quiet_until = state.get("quiet_until")
     except Exception:
         pass
 
@@ -332,16 +334,18 @@ def hypercontext_compact() -> str:
         passages = client.agents.passages.list(
             agent_id=agent_id,
             search="[INTEROCEPTION_STATE]",
-            limit=1
+            limit=10
         )
         items = getattr(passages, "items", passages) if passages else []
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith("[INTEROCEPTION_STATE]"):
-                state = json.loads(text[len("[INTEROCEPTION_STATE]"):].strip())
-                pressures = state.get("pressures", {})
-                total_emissions = state.get("total_emissions", 0)
-                break
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith("[INTEROCEPTION_STATE]")]
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            state = json.loads(text[len("[INTEROCEPTION_STATE]"):].strip())
+            pressures = state.get("pressures", {})
+            total_emissions = state.get("total_emissions", 0)
     except Exception:
         pass
 

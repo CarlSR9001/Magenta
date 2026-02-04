@@ -87,7 +87,12 @@ class MagentaStateProvider(ExternalStateProvider):
                 }
                 if letta_cfg.get("base_url"):
                     params["base_url"] = letta_cfg["base_url"]
-                self._letta_client = Letta(**params)
+                try:
+                    self._letta_client = Letta(**params)
+                except TypeError:
+                    # Fallback for older client param names
+                    params["key"] = params.pop("api_key")
+                    self._letta_client = Letta(**params)
                 self._letta_agent_id = letta_cfg["agent_id"]
             except Exception as e:
                 logger.warning(f"Failed to initialize Letta client: {e}")

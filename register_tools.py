@@ -2,13 +2,16 @@
 """Register tools with a Letta agent (simplified for direct params)."""
 
 import logging
+import argparse
+import os
 from typing import List
+import yaml
 
 from letta_client import Letta
 from rich.console import Console
 from rich.table import Table
 
-from config_loader import get_letta_config, get_bluesky_config, get_elevenlabs_config, get_relay_audio_config, get_moltbook_config, get_config
+from config_loader import get_letta_config, get_bluesky_config, get_elevenlabs_config, get_relay_audio_config, get_moltbook_config, get_discord_config, get_config
 from tools import ping, PingArgs
 from tools.bsky_read import (
     bsky_list_notifications, ListNotificationsArgs,
@@ -139,6 +142,20 @@ from tools.hat_tools import (
     get_current_hat,
     list_available_hats,
     clear_hat,
+)
+from tools.discord_tools import (
+    discord_list_messages, ListDiscordMessagesArgs,
+    discord_send_message, SendDiscordMessageArgs,
+    discord_get_channel, GetDiscordChannelArgs,
+    discord_add_reaction, AddDiscordReactionArgs,
+    discord_get_user, GetDiscordUserArgs,
+)
+from tools.discord_voice_tools import (
+    discord_voice_speak, DiscordVoiceSpeakArgs,
+)
+from tools.twilio_tools import (
+    twilio_make_call, TwilioCallArgs,
+    twilio_make_realtime_call, TwilioRealtimeCallArgs,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -813,6 +830,57 @@ TOOL_CONFIGS = [
         "description": "Remove current hat and return to default mode (all tools)",
         "tags": ["hat", "context", "mode"],
     },
+    # ==========================================================================
+    # DISCORD TOOLS
+    # ==========================================================================
+    {
+        "func": discord_list_messages,
+        "args_schema": ListDiscordMessagesArgs,
+        "description": "List recent messages from a Discord channel",
+        "tags": ["discord", "read", "messages"],
+    },
+    {
+        "func": discord_send_message,
+        "args_schema": SendDiscordMessageArgs,
+        "description": "Send a message to a Discord channel (supports replies)",
+        "tags": ["discord", "write", "messages"],
+    },
+    {
+        "func": discord_get_channel,
+        "args_schema": GetDiscordChannelArgs,
+        "description": "Get information about a Discord channel",
+        "tags": ["discord", "read", "channel"],
+    },
+    {
+        "func": discord_add_reaction,
+        "args_schema": AddDiscordReactionArgs,
+        "description": "Add a reaction to a Discord message",
+        "tags": ["discord", "write", "reaction"],
+    },
+    {
+        "func": discord_get_user,
+        "args_schema": GetDiscordUserArgs,
+        "description": "Get information about a Discord user",
+        "tags": ["discord", "read", "user"],
+    },
+    {
+        "func": twilio_make_call,
+        "args_schema": TwilioCallArgs,
+        "description": "Place an outbound phone call and speak a message via Twilio",
+        "tags": ["twilio", "phone", "write"],
+    },
+    {
+        "func": twilio_make_realtime_call,
+        "args_schema": TwilioRealtimeCallArgs,
+        "description": "Place an outbound phone call and connect a Twilio Media Stream",
+        "tags": ["twilio", "phone", "write", "realtime"],
+    },
+    {
+        "func": discord_voice_speak,
+        "args_schema": DiscordVoiceSpeakArgs,
+        "description": "Join a Discord voice channel and speak a short TTS message",
+        "tags": ["discord", "voice", "write"],
+    },
 ]
 
 
@@ -829,7 +897,13 @@ def register_tools(agent_id: str = None, tools: List[str] = None, set_env: bool 
         }
         if letta_config.get("base_url"):
             client_params["base_url"] = letta_config["base_url"]
-        client = Letta(**client_params)
+        try:
+            client = Letta(**client_params)
+        except TypeError:
+            client_params.pop("api_key", None)
+            if letta_config.get("api_key"):
+                client_params["token"] = letta_config["api_key"]
+            client = Letta(**client_params)
 
         try:
             agent = client.agents.retrieve(agent_id=agent_id)
@@ -844,12 +918,44 @@ def register_tools(agent_id: str = None, tools: List[str] = None, set_env: bool 
                 elevenlabs_config = get_elevenlabs_config()
                 relay_config = get_relay_audio_config()
                 moltbook_config = get_moltbook_config()
+                discord_config = get_discord_config()
+                voice_config = {}
+                try:
+                    with open("voice_config.yaml", "r", encoding="utf-8") as handle:
+                        voice_config = yaml.safe_load(handle) or {}
+                except Exception:
+                    voice_config = {}
 
                 env_vars = {
                     "BSKY_USERNAME": bsky_config["username"],
                     "BSKY_PASSWORD": bsky_config["password"],
                     "PDS_URI": bsky_config.get("pds_uri", "https://bsky.social"),
                 }
+
+                if discord_config.get("bot_token"):
+                    env_vars["DISCORD_BOT_TOKEN"] = discord_config["bot_token"]
+                if voice_config:
+                    voice_public_base = (
+                        (voice_config.get("twilio", {}) or {}).get("public_base_url", "") or "https://cyberelf.link"
+                    ).rstrip("/")
+                    bridge_url = f"{voice_public_base}/discord/say"
+                    bridge_token = (voice_config.get("discord_voice", {}) or {}).get("api_token", "")
+                    env_vars["DISCORD_VOICE_BRIDGE_URL"] = bridge_url
+                    if bridge_token:
+                        env_vars["DISCORD_VOICE_BRIDGE_TOKEN"] = bridge_token
+
+                twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
+                twilio_api_key_sid = os.getenv("TWILIO_API_KEY_SID", "")
+                twilio_api_key_secret = os.getenv("TWILIO_API_KEY_SECRET", "")
+                twilio_from_number = os.getenv("TWILIO_FROM_NUMBER", "")
+                if twilio_account_sid:
+                    env_vars["TWILIO_ACCOUNT_SID"] = twilio_account_sid
+                if twilio_api_key_sid:
+                    env_vars["TWILIO_API_KEY_SID"] = twilio_api_key_sid
+                if twilio_api_key_secret:
+                    env_vars["TWILIO_API_KEY_SECRET"] = twilio_api_key_secret
+                if twilio_from_number:
+                    env_vars["TWILIO_FROM_NUMBER"] = twilio_from_number
 
                 if elevenlabs_config.get("api_key"):
                     env_vars["ELEVENLABS_API_KEY"] = elevenlabs_config["api_key"]
@@ -871,10 +977,16 @@ def register_tools(agent_id: str = None, tools: List[str] = None, set_env: bool 
                 if letta_config.get("base_url"):
                     env_vars["LETTA_BASE_URL"] = letta_config["base_url"]
 
-                client.agents.update(
-                    agent_id=agent_id,
-                    tool_exec_environment_variables=env_vars,
-                )
+                if hasattr(client.agents, "modify"):
+                    client.agents.modify(
+                        agent_id=agent_id,
+                        tool_exec_environment_variables=env_vars,
+                    )
+                else:
+                    client.agents.update(
+                        agent_id=agent_id,
+                        tool_exec_environment_variables=env_vars,
+                    )
                 console.print("[green]✓ Tool environment variables set[/green]")
             except Exception as exc:
                 console.print(f"[yellow]Warning: failed to set tool env vars: {exc}[/yellow]")
@@ -949,8 +1061,6 @@ def register_tools(agent_id: str = None, tools: List[str] = None, set_env: bool 
 
 
 if __name__ == "__main__":
-    import argparse
-
     parser = argparse.ArgumentParser(description="Register tools with a Letta agent")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
     parser.add_argument("--agent-id", help="Agent ID (default: from config)")

@@ -173,6 +173,17 @@ class PressureAccumulator:
         pressure_state = self.state.get_pressure(signal)
         now = datetime.now(timezone.utc)
 
+        # First-time initialization: avoid infinite accumulation on startup.
+        if not pressure_state.last_emitted:
+            pressure_state.last_emitted = now.isoformat()
+            pressure_state.last_updated = now.isoformat()
+            if external_boost > 0:
+                pressure_state.pressure = min(
+                    pressure_state.pressure + external_boost,
+                    config.max_pressure,
+                )
+            return pressure_state.pressure
+
         # Calculate time since last update
         time_since_update = self._time_since(pressure_state.last_updated)
         time_since_emission = self._time_since(pressure_state.last_emitted)
@@ -231,8 +242,8 @@ class PressureAccumulator:
         pressure_state = self.state.get_pressure(signal)
         time_since_emission = self._time_since(pressure_state.last_emitted)
 
-        # Check if quiet mode is active
-        if self.is_quiet() and signal != Signal.QUIET:
+        # Check if quiet mode is active (allow ANXIETY as an emergency signal)
+        if self.is_quiet() and signal not in {Signal.QUIET, Signal.ANXIETY}:
             return False, "quiet_mode_active", False
 
         # Cooldowns for high-priority signals to prevent spam loops

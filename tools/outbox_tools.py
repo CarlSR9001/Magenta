@@ -265,7 +265,7 @@ def outbox_purge_stale_drafts(max_age_hours: int = 24) -> str:
                     if passage_time < cutoff:
                         passage_id = getattr(passage, "id", None)
                         if passage_id:
-                            client.agents.passages.delete(agent_id, passage_id)
+                            client.agents.passages.delete(passage_id, agent_id=agent_id)
                             purged_count += 1
                 except (json.JSONDecodeError, ValueError, TypeError):
                     continue

@@ -164,12 +164,15 @@ def _handle_letta_admin(op: str, args: dict) -> dict:
         passage_id = args.get("passage_id")
         if not passage_id:
             return {"error": "missing_passage_id"}
-        client.agents.passages.delete(agent_id=agent_id, passage_id=passage_id)
+        client.agents.passages.delete(passage_id, agent_id=agent_id)
         return {"deleted": True, "passage_id": passage_id}
 
     if op == "update_tool_env":
         env = args.get("env", {})
-        client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env)
+        if hasattr(client.agents, "modify"):
+            client.agents.modify(agent_id=agent_id, tool_exec_environment_variables=env)
+        else:
+            client.agents.update(agent_id=agent_id, tool_exec_environment_variables=env)
         return {"updated": True, "keys": list(env.keys())}
 
     if op == "send_message":

@@ -164,9 +164,18 @@ class LimbicLayer:
         Returns:
             EmittedSignal if a signal should be emitted, None otherwise
         """
-        # Check quiet mode first
+        # Check quiet mode first: suppress most signals, but allow ANXIETY to build/emit
         if self.accumulator.is_quiet():
-            logger.debug("Quiet mode active, suppressing signals")
+            logger.debug("Quiet mode active, suppressing non-emergency signals")
+            boosts = self._compute_external_boosts()
+            anxiety_boost = boosts.get(Signal.ANXIETY, 0.0)
+            self.accumulator.update_pressure(Signal.ANXIETY, external_boost=anxiety_boost)
+            should_emit, reason, forced = self.accumulator.should_emit(Signal.ANXIETY)
+            if should_emit:
+                emitted = self.accumulator.emit_signal(Signal.ANXIETY, reason, forced)
+                logger.info(f"Emitting signal during quiet mode: {emitted}")
+                self._save_state()
+                return emitted
             self._save_state()
             return None
 

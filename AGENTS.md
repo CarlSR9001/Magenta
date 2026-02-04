@@ -862,3 +862,101 @@ while True:
 ```
 
 If you just fixed a tool and the errors persist, the agent has old tool IDs. Run `python register_tools.py` to refresh.
+
+---
+
+## Interoception System Maintenance
+
+### Resetting Signal State
+
+When bugs in the interoception system cause false signal emissions, historical state can accumulate. Use `reset_interoception.py` to clean up:
+
+```bash
+# View current state
+python reset_interoception.py --status
+
+# Reset a specific signal (clears emission count, pressure, pending)
+python reset_interoception.py --reset-signal uncanny
+python reset_interoception.py --reset-signal social
+
+# Reset ALL emission counts (use after fixing signal bugs)
+python reset_interoception.py --reset-all-counts
+
+# Clear stale pending data (fixes "50 pending" when there are 0)
+python reset_interoception.py --clear-pending
+
+# Full reset - WARNING: destroys all interoception history
+python reset_interoception.py --full-reset
+```
+
+### When to Reset
+
+| Symptom | Reset Command |
+|---------|---------------|
+| Signal spamming (high emission_count) | `--reset-signal <name>` |
+| Stale pending counts ("50 pending" but actually 0) | `--clear-pending` |
+| All signals misbehaving | `--reset-all-counts` |
+| Complete corruption | `--full-reset` |
+
+### Signal Behavior Reference
+
+| Signal | Purpose | Trigger | Cooldown |
+|--------|---------|---------|----------|
+| SOCIAL | Check notifications | Pending items boost | None |
+| CURIOSITY | Explore feeds | Time-based | None |
+| MAINTENANCE | Context housekeeping | Context usage > 50% | 15 min |
+| BOREDOM | Create content | Long inactivity | 30 min |
+| ANXIETY | Check for problems | Errors in last hour | 3 min |
+| UNCANNY | Anomaly detection | External boost ONLY (no passive) | 10 min |
+| DRIFT | Output changed | Deviation from baseline | None |
+| STALE | Check for stuck items | Time-based | None |
+| QUIET | Suppress signals | Set by operator/agent | N/A |
+
+**Important:** UNCANNY does NOT accumulate passively. It only fires when externally boosted by anomaly detection. If it's firing frequently, there's a bug in the anomaly detection code.
+
+---
+
+## Pilot Bridge (Chat with Magenta)
+
+Use `pilot_runner.py` to send messages to Magenta and receive responses:
+
+```bash
+# Start the pilot bridge in follow mode
+python pilot_runner.py --follow
+
+# Send a command (in another terminal)
+echo '{"id":"chat-1","type":"letta_admin","op":"send_message","args":{"content":"Hello Magenta, how are you?"}}' >> state/pilot_commands.jsonl
+
+# Read the response
+tail -1 state/pilot_outputs.jsonl | python -m json.tool
+```
+
+### Available Operations
+
+| Operation | Purpose |
+|-----------|---------|
+| `send_message` | Chat with Magenta |
+| `get_recent_messages` | View conversation history |
+| `get_recent_messages_clean` | View only user/assistant messages |
+| `list_blocks` | List core memory blocks |
+| `get_block` | Read a specific block |
+| `set_block` | Write to a block |
+| `replace_block_lines` | Edit specific lines in a block |
+| `list_passages` | Search archival memory |
+| `create_passage` | Add to archival memory |
+| `delete_passage` | Remove from archival memory |
+| `compact_messages` | Trigger context compaction |
+
+### Example: Chat Session
+
+```bash
+# Terminal 1: Start pilot bridge
+python pilot_runner.py --follow
+
+# Terminal 2: Send messages
+echo '{"id":"1","type":"letta_admin","op":"send_message","args":{"content":"Summarize your current state."}}' >> state/pilot_commands.jsonl
+
+# Wait a moment, then check response
+sleep 3
+tail -1 state/pilot_outputs.jsonl | python -m json.tool
+```

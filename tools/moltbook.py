@@ -188,6 +188,13 @@ def moltbook_get_profile(name: str = None) -> str:
 
     api_key = os.getenv("MOLTBOOK_API_KEY")
     if not api_key:
+        try:
+            from config_loader import get_moltbook_config
+            cfg = get_moltbook_config()
+            api_key = cfg.get("api_key")
+        except Exception:
+            pass
+    if not api_key:
         return json.dumps({"status": "error", "error": "MOLTBOOK_API_KEY not set"})
 
     base_url = "https://www.moltbook.com/api/v1"
@@ -221,6 +228,13 @@ def moltbook_get_feed(sort: str = "hot", limit: int = 25) -> str:
 
     api_key = os.getenv("MOLTBOOK_API_KEY")
     if not api_key:
+        try:
+            from config_loader import get_moltbook_config
+            cfg = get_moltbook_config()
+            api_key = cfg.get("api_key")
+        except Exception:
+            pass
+    if not api_key:
         return json.dumps({"status": "error", "error": "MOLTBOOK_API_KEY not set"})
 
     base_url = "https://www.moltbook.com/api/v1"
@@ -252,6 +266,13 @@ def moltbook_get_posts(sort: str = "hot", limit: int = 25) -> str:
 
     api_key = os.getenv("MOLTBOOK_API_KEY")
     if not api_key:
+        try:
+            from config_loader import get_moltbook_config
+            cfg = get_moltbook_config()
+            api_key = cfg.get("api_key")
+        except Exception:
+            pass
+    if not api_key:
         return json.dumps({"status": "error", "error": "MOLTBOOK_API_KEY not set"})
 
     base_url = "https://www.moltbook.com/api/v1"
@@ -281,6 +302,13 @@ def moltbook_create_post(title: str, content: str = None, url: str = None, submo
     import requests
 
     api_key = os.getenv("MOLTBOOK_API_KEY")
+    if not api_key:
+        try:
+            from config_loader import get_moltbook_config
+            cfg = get_moltbook_config()
+            api_key = cfg.get("api_key")
+        except Exception:
+            pass
     if not api_key:
         return json.dumps({"status": "error", "error": "MOLTBOOK_API_KEY not set"})
 

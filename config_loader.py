@@ -142,3 +142,14 @@ def get_moltbook_config() -> Dict[str, Any]:
         "agent_name": config.get("moltbook.agent_name", ""),
         "agent_description": config.get("moltbook.agent_description", ""),
     }
+
+
+def get_discord_config() -> Dict[str, Any]:
+    config = get_config()
+    return {
+        "bot_token": config.get("discord.bot_token", os.getenv("DISCORD_BOT_TOKEN", "")),
+        "guild_ids": config.get("discord.guild_ids", []),
+        "allowed_channels": config.get("discord.allowed_channels", []),
+        "respond_to_mentions": config.get("discord.respond_to_mentions", True),
+        "respond_to_dms": config.get("discord.respond_to_dms", True),
+    }

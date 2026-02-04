@@ -41,6 +41,7 @@ from interoception import (
     Signal,
     EmittedSignal,
     InteroceptionStateStore,
+    InteroceptionState,
 )
 
 logging.basicConfig(
@@ -52,6 +53,63 @@ logger = logging.getLogger(__name__)
 # Marker for interoception state in Letta archival memory
 INTEROCEPTION_STATE_MARKER = "[INTEROCEPTION_STATE]"
 SYNC_STATE_PATH = Path("state/sync_state.json")
+
+
+def _detect_outcome(response: str) -> str:
+    """Detect the outcome of agent action from response text.
+
+    Returns one of: 'high_engagement', 'acknowledged', 'skipped', 'error'
+
+    This is more sophisticated than simple keyword matching:
+    - Handles JSON tool results from Moltbook ({"status": "success"/"error"})
+    - Detects explicit skips/passes
+    - Better error pattern matching
+    """
+    import re
+
+    response_lower = response.lower()
+
+    # Check for JSON-formatted tool results (Moltbook style)
+    # Look for {"status": "error"} or {"status": "success"} patterns
+    json_error_pattern = r'"status"\s*:\s*"error"'
+    json_success_pattern = r'"status"\s*:\s*"success"'
+
+    if re.search(json_error_pattern, response_lower):
+        return "error"
+    if re.search(json_success_pattern, response_lower):
+        return "high_engagement"
+
+    # Error indicators (expanded)
+    error_patterns = [
+        "error:", "error ", "failed", "couldn't", "unable to",
+        "cannot", "can't", "not found", "invalid", "exception",
+        "timeout", "refused", "denied", "blocked", "rate limit",
+    ]
+    if any(pattern in response_lower for pattern in error_patterns):
+        return "error"
+
+    # High engagement - actual actions taken
+    engagement_patterns = [
+        "posted", "replied", "created", "sent", "completed",
+        "published", "commented", "liked", "followed", "shared",
+        "success!", "url:", "https://",
+    ]
+    if any(pattern in response_lower for pattern in engagement_patterns):
+        return "high_engagement"
+
+    # Explicit skips/passes - agent decided not to act
+    skip_patterns = [
+        "skipping", "skipped", "nothing to", "no action",
+        "no pending", "all clear", "healthy", "no notifications",
+        "no items", "nothing needs", "decided not to",
+        "will not", "won't", "passing on", "pass on", "deferring",
+        "not responding", "choosing not to", "chose not to",
+    ]
+    if any(pattern in response_lower for pattern in skip_patterns):
+        return "skipped"
+
+    # Default to acknowledged - agent processed but outcome unclear
+    return "acknowledged"
 
 
 def sync_quiet_from_archival(client: Letta, agent_id: str, limbic: "LimbicLayer") -> bool:
@@ -100,6 +158,110 @@ def sync_quiet_from_archival(client: Letta, agent_id: str, limbic: "LimbicLayer"
         return False
 
 
+def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def sync_state_from_archival(client: Letta, agent_id: str, limbic: "LimbicLayer") -> bool:
+    """Sync full state FROM archival memory TO local state if archival is newer.
+
+    This allows Letta cloud tools (which mutate archival state) to influence
+    the local heartbeat's behavior.
+    """
+    import json
+
+    try:
+        passages = client.agents.passages.list(
+            agent_id=agent_id,
+            search=INTEROCEPTION_STATE_MARKER,
+            limit=10
+        )
+        items = getattr(passages, "items", passages) if passages else []
+
+        def _get_ts(passage):
+            return getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(INTEROCEPTION_STATE_MARKER)]
+        if not candidates:
+            return False
+        latest = max(candidates, key=lambda p: _get_ts(p) or "")
+        text = getattr(latest, "text", "")
+        json_str = text[len(INTEROCEPTION_STATE_MARKER):].strip()
+        archival_state = json.loads(json_str)
+
+        local_state = limbic.state.to_dict()
+
+        # Merge per-signal state based on most recent last_updated timestamp
+        local_pressures = local_state.get("pressures", {})
+        archival_pressures = archival_state.get("pressures", {})
+        merged_pressures = {}
+
+        all_signal_keys = set(local_pressures.keys()) | set(archival_pressures.keys())
+        for signal in all_signal_keys:
+            remote_p = archival_pressures.get(signal, {})
+            local_p = local_pressures.get(signal, {})
+            remote_updated = _parse_iso(remote_p.get("last_updated"))
+            local_updated = _parse_iso(local_p.get("last_updated"))
+
+            if local_updated is None or (remote_updated and remote_updated > local_updated):
+                merged = remote_p
+            else:
+                merged = local_p
+
+            # Merge known_pending and last_outcomes conservatively
+            merged_pending = dict(local_p.get("known_pending", {}))
+            merged_pending.update(remote_p.get("known_pending", {}))
+            merged_outcomes = dict(local_p.get("last_outcomes", {}))
+            merged_outcomes.update(remote_p.get("last_outcomes", {}))
+
+            merged["known_pending"] = merged_pending
+            merged["last_outcomes"] = merged_outcomes
+            merged["emission_count"] = max(
+                int(local_p.get("emission_count", 0)),
+                int(remote_p.get("emission_count", 0)),
+            )
+
+            # Prefer newer last_emitted / last_action when available
+            remote_emitted = _parse_iso(remote_p.get("last_emitted"))
+            local_emitted = _parse_iso(local_p.get("last_emitted"))
+            if local_emitted is None or (remote_emitted and remote_emitted > local_emitted):
+                merged["last_emitted"] = remote_p.get("last_emitted")
+
+            remote_action = _parse_iso(remote_p.get("last_action"))
+            local_action = _parse_iso(local_p.get("last_action"))
+            if local_action is None or (remote_action and remote_action > local_action):
+                merged["last_action"] = remote_p.get("last_action")
+
+            merged_pressures[signal] = merged
+
+        local_state["pressures"] = merged_pressures
+        local_state["quiet_until"] = archival_state.get("quiet_until", local_state.get("quiet_until"))
+
+        # Prefer newer global timestamps
+        remote_last_wake = _parse_iso(archival_state.get("last_wake"))
+        local_last_wake = _parse_iso(local_state.get("last_wake"))
+        if local_last_wake is None or (remote_last_wake and remote_last_wake > local_last_wake):
+            local_state["last_wake"] = archival_state.get("last_wake")
+
+        local_state["total_emissions"] = max(
+            int(local_state.get("total_emissions", 0)),
+            int(archival_state.get("total_emissions", 0)),
+        )
+
+        limbic.state = InteroceptionState.from_dict(local_state)
+        limbic.accumulator.state = limbic.state
+        limbic._save_state()
+        return True
+    except Exception as e:
+        logger.debug(f"Failed to sync full state from archival: {e}")
+        return False
+
+
 def sync_state_to_archival(client: Letta, agent_id: str, state_dict: dict) -> bool:
     """Sync interoception state to Letta archival memory.
 
@@ -123,10 +285,8 @@ def sync_state_to_archival(client: Letta, agent_id: str, state_dict: dict) -> bo
                 passage_id = getattr(passage, "id", None)
                 if passage_id:
                     try:
-                        client.agents.passages.delete(
-                            agent_id=agent_id,
-                            passage_id=str(passage_id)
-                        )
+                        # Correct API: delete(memory_id, agent_id=...)
+                        client.agents.passages.delete(str(passage_id), agent_id=agent_id)
                     except Exception:
                         pass
 
@@ -211,16 +371,9 @@ def run_agent_with_signal(
         if last_assistant_msg:
             logger.info(f"Agent response: {last_assistant_msg[:200]}...")
 
-            # Record outcome based on response
-            # This is a simple heuristic - could be more sophisticated
-            if any(word in last_assistant_msg.lower() for word in
-                   ["error", "failed", "couldn't", "unable"]):
-                limbic.record_action(emitted.signal, "error")
-            elif any(word in last_assistant_msg.lower() for word in
-                     ["posted", "replied", "created", "sent", "completed"]):
-                limbic.record_action(emitted.signal, "high_engagement")
-            else:
-                limbic.record_action(emitted.signal, "acknowledged")
+            # Record outcome based on response - improved heuristics
+            outcome = _detect_outcome(last_assistant_msg)
+            limbic.record_action(emitted.signal, outcome)
 
         return True
     except Exception as e:
@@ -313,12 +466,23 @@ def run_cleanup_cycle() -> bool:
         return False
 
 
-def mark_notifications_processed() -> int:
-    """Mark all current notifications as processed in the local database.
+def mark_notifications_processed(outcome: str = "acknowledged") -> int:
+    """Mark notifications based on how the agent handled the SOCIAL signal.
+
+    Args:
+        outcome: The outcome from the agent's response
+            - 'high_engagement': Agent actively handled notifications - mark as processed
+            - 'skipped'/'acknowledged': Agent saw them but didn't act - mark but note status
+            - 'error': Something went wrong - don't mark anything (will retry)
 
     This is called after SOCIAL signals are handled, since Letta cloud tools
     cannot access local filesystem. The heartbeat marks them on behalf of the agent.
     """
+    # If the agent errored, don't mark anything - let it retry next time
+    if outcome == "error":
+        logger.info("SOCIAL signal errored - not marking notifications (will retry)")
+        return 0
+
     try:
         from notification_db import NotificationDB
         from flow.bsky_api import BskyApi
@@ -335,18 +499,29 @@ def mark_notifications_processed() -> int:
         db = NotificationDB()
         processed = db.get_all_processed_uris()
 
+        # Determine status based on outcome
+        if outcome == "high_engagement":
+            status = "agent_handled"
+            reason = "agent_responded_to_social_signal"
+        elif outcome == "skipped":
+            status = "agent_skipped"
+            reason = "agent_saw_but_chose_not_to_respond"
+        else:
+            status = "auto_processed"
+            reason = "social_signal_handled_outcome_unclear"
+
         count = 0
         for notif in notifications:
             uri = notif.get("uri", "")
             if uri and uri not in processed:
-                db.mark_processed(uri, status="auto_processed", reason="social_signal_handled")
+                db.mark_processed(uri, status=status, reason=reason)
                 count += 1
 
         db.close()
-        logger.info(f"Auto-marked {count} notifications as processed")
+        logger.info(f"Marked {count} notifications as '{status}' (outcome: {outcome})")
         return count
     except Exception as e:
-        logger.warning(f"Failed to auto-mark notifications: {e}")
+        logger.warning(f"Failed to mark notifications: {e}")
         return 0
 
 
@@ -370,10 +545,13 @@ def handle_signal(
     # All signals wake the agent with their prompt
     run_agent_with_signal(client, agent_id, emitted, limbic)
 
-    # After SOCIAL signal, auto-mark notifications as processed
+    # After SOCIAL signal, mark notifications based on how agent handled them
     # This compensates for Letta cloud tools not having local filesystem access
     if signal_type == Signal.SOCIAL:
-        mark_notifications_processed()
+        # Get the outcome that was just recorded
+        social_state = limbic.state.get_pressure(Signal.SOCIAL)
+        last_outcome = social_state.last_outcomes.get("social", "acknowledged")
+        mark_notifications_processed(outcome=last_outcome)
 
     # Periodic cleanup on MAINTENANCE or STALE
     if signal_type in (Signal.MAINTENANCE, Signal.STALE):
@@ -430,7 +608,11 @@ def main():
     }
     if letta_cfg.get("base_url"):
         client_params["base_url"] = letta_cfg["base_url"]
-    client = Letta(**client_params)
+    try:
+        client = Letta(**client_params)
+    except TypeError:
+        client_params["key"] = client_params.pop("api_key")
+        client = Letta(**client_params)
     agent_id = letta_cfg["agent_id"]
 
     # Initialize interoception layer
@@ -489,8 +671,9 @@ def main():
     status = limbic.get_status()
     logger.info(f"Active signals: {len([s for s in status['signals'].values() if s['pressure'] > 0])}")
 
-    # Sync quiet mode FROM archival first (agent may have set it while heartbeat was down)
+    # Sync quiet mode and full state FROM archival first (agent may have set it while heartbeat was down)
     sync_quiet_from_archival(client, agent_id, limbic)
+    sync_state_from_archival(client, agent_id, limbic)
     limbic._save_state()
 
     # Then sync full state TO archival (but quiet_until is now preserved)
@@ -500,6 +683,7 @@ def main():
     tick_count = 0
     last_sync_tick = 0
     last_quiet_sync_tick = 0
+    last_full_sync_tick = 0
     while running:
         tick_count += 1
         logger.debug(f"Tick {tick_count}")
@@ -510,6 +694,12 @@ def main():
                 limbic._save_state()  # Persist the change
             last_quiet_sync_tick = tick_count
             write_sync_snapshot(provider, limbic)
+
+        # Sync full state from archival periodically (tools may have updated it)
+        if tick_count - last_full_sync_tick >= 5:
+            if sync_state_from_archival(client, agent_id, limbic):
+                limbic._save_state()
+            last_full_sync_tick = tick_count
 
         # Run limbic layer tick
         emitted = limbic.tick()

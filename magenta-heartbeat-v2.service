@@ -9,6 +9,7 @@ User=shankatsu
 Group=shankatsu
 WorkingDirectory=/home/shankatsu/magenta
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/home/shankatsu/magenta/.env
 ExecStart=/home/shankatsu/magenta/.venv/bin/python /home/shankatsu/magenta/heartbeat_v2.py
 Restart=always
 RestartSec=10

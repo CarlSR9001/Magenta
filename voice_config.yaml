@@ -1,0 +1,48 @@
+realtime:
+  model: gpt-realtime-mini
+  voice: shimmer
+  instructions: |
+    You are Magenta, speaking in Discord voice. Speak naturally and concisely.
+    You do have voice I/O via this bridge; do not claim you lack audio tools.
+    Treat incoming transcripts as what the user just said; respond normally.
+    Keep responses short unless asked to elaborate.
+  transcription_model: gpt-4o-mini-transcribe
+  turn_detection:
+    type: server_vad
+    threshold: 0.5
+    prefix_padding_ms: 500
+    silence_duration_ms: 500
+
+tts:
+  model: gpt-4o-mini-tts
+  voice: shimmer
+  instructions: |
+    Speak naturally and conversationally. Keep a warm, friendly tone.
+
+audio:
+  input_format: g711_ulaw
+  output_format: g711_ulaw
+  transcription_input_format: pcm16
+
+local:
+  log_level: info
+
+openai:
+  api_base: wss://api.openai.com/v1/realtime
+
+
+twilio:
+  enabled: true
+  listen_host: 0.0.0.0
+  listen_port: 8790
+  public_base_url: "https://cyberelf.link"
+  voice_webhook_path: /twilio/voice
+  stream_path: /twilio/stream
+
+discord_voice:
+  enabled: true
+  guild_id: "371802153997565955"
+  channel_id: "920814276690735155"
+  receive_sample_rate: 48000
+  api_port: 8791
+  api_token: ""

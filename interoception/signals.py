@@ -118,12 +118,14 @@ DEFAULT_SIGNAL_CONFIGS: Dict[Signal, SignalConfig] = {
         max_interval_seconds=28800,       # 8 hours max
     ),
     Signal.UNCANNY: SignalConfig(
-        base_interval_seconds=1800,       # 30 min before passive accumulation starts
-        accumulation_rate=0.001,          # Slow passive - should be externally boosted
-        decay_rate=0.05,                  # Decays fast after emission
-        emit_threshold=0.5,
+        base_interval_seconds=3600,       # 1 hour before even considering (usually never)
+        accumulation_rate=0.0,            # NO passive accumulation - PURELY reactive
+        decay_rate=0.1,                   # Decays quickly after emission
+        emit_threshold=0.7,               # High threshold - needs strong external signal
         priority=9,                       # Highest priority
         max_interval_seconds=None,        # No forced emission - purely reactive
+        # UNCANNY should ONLY fire when external anomaly detection boosts it
+        # It is NOT a time-based signal like SOCIAL or MAINTENANCE
     ),
     Signal.QUIET: SignalConfig(
         base_interval_seconds=0,

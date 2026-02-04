@@ -62,6 +62,27 @@ def _get_letta_client():
         return None, None, str(e)
 
 
+def _init_letta_client(api_key: str, base_url: Optional[str]):
+    """Initialize Letta client with compatibility fallbacks."""
+    from letta_client import Letta
+
+    if base_url:
+        try:
+            return Letta(api_key=api_key, base_url=base_url)
+        except TypeError:
+            try:
+                return Letta(key=api_key, base_url=base_url)
+            except TypeError:
+                return Letta()
+    try:
+        return Letta(api_key=api_key)
+    except TypeError:
+        try:
+            return Letta(key=api_key)
+        except TypeError:
+            return Letta()
+
+
 def _load_interoception_state_from_archival(client, agent_id: str) -> dict:
     """Load interoception state from Letta archival memory."""
     import json
@@ -73,15 +94,18 @@ def _load_interoception_state_from_archival(client, agent_id: str) -> dict:
         passages = client.agents.passages.list(
             agent_id=agent_id,
             search=MARKER,
-            limit=1
+            limit=10
         )
         items = getattr(passages, "items", passages) if passages else []
 
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith(MARKER):
-                json_str = text[len(MARKER):].strip()
-                return json.loads(json_str)
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(MARKER)]
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            json_str = text[len(MARKER):].strip()
+            return json.loads(json_str)
 
         return {}  # No state found
     except Exception:
@@ -108,10 +132,8 @@ def _save_interoception_state_to_archival(client, agent_id: str, state: dict) ->
             if text.startswith(MARKER):
                 passage_id = getattr(passage, "id", None)
                 if passage_id:
-                    client.agents.passages.delete(
-                        agent_id=agent_id,
-                        passage_id=str(passage_id)
-                    )
+                    # Correct API: delete(memory_id, agent_id=...)
+                    client.agents.passages.delete(str(passage_id), agent_id=agent_id)
 
         # Create new state passage
         state_json = json.dumps(state, indent=2, sort_keys=True)
@@ -150,9 +172,13 @@ def interoception_get_status() -> str:
         return json.dumps({"error": "LETTA_API_KEY and LETTA_AGENT_ID must be set"})
 
     try:
-        client = Letta(api_key=api_key, base_url=base_url) if base_url else Letta(api_key=api_key)
-    except TypeError:
-        client = Letta(api_key=api_key) if api_key else Letta()
+        client = _init_letta_client(api_key, base_url)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
     try:
         # Search for state passage
@@ -163,13 +189,15 @@ def interoception_get_status() -> str:
         )
         items = getattr(passages, "items", passages) if passages else []
 
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(MARKER)]
         state = None
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith(MARKER):
-                json_str = text[len(MARKER):].strip()
-                state = json.loads(json_str)
-                break
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            json_str = text[len(MARKER):].strip()
+            state = json.loads(json_str)
 
         if not state:
             return json.dumps({
@@ -236,9 +264,9 @@ def interoception_set_quiet(duration_hours: float) -> str:
         return json.dumps({"error": "LETTA_API_KEY and LETTA_AGENT_ID must be set"})
 
     try:
-        client = Letta(api_key=api_key, base_url=base_url) if base_url else Letta(api_key=api_key)
-    except TypeError:
-        client = Letta(api_key=api_key) if api_key else Letta()
+        client = _init_letta_client(api_key, base_url)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
     try:
         # Load existing state
@@ -251,14 +279,18 @@ def interoception_set_quiet(duration_hours: float) -> str:
 
         state = {"pressures": {}}
         old_passage_ids = []
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith(MARKER):
-                json_str = text[len(MARKER):].strip()
-                state = json.loads(json_str)
-                passage_id = getattr(passage, "id", None)
-                if passage_id:
-                    old_passage_ids.append(str(passage_id))
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(MARKER)]
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            json_str = text[len(MARKER):].strip()
+            state = json.loads(json_str)
+        for passage in candidates:
+            passage_id = getattr(passage, "id", None)
+            if passage_id:
+                old_passage_ids.append(str(passage_id))
 
         until = datetime.now(timezone.utc) + timedelta(hours=duration_hours)
         state["quiet_until"] = until.isoformat()
@@ -267,8 +299,8 @@ def interoception_set_quiet(duration_hours: float) -> str:
         for passage_id in old_passage_ids:
             try:
                 client.agents.passages.delete(
-                    agent_id=agent_id,
-                    passage_id=passage_id
+                    str(passage_id),
+                    agent_id=agent_id
                 )
             except Exception:
                 pass
@@ -308,9 +340,9 @@ def interoception_clear_quiet() -> str:
         return json.dumps({"error": "LETTA_API_KEY and LETTA_AGENT_ID must be set"})
 
     try:
-        client = Letta(api_key=api_key, base_url=base_url) if base_url else Letta(api_key=api_key)
-    except TypeError:
-        client = Letta(api_key=api_key) if api_key else Letta()
+        client = _init_letta_client(api_key, base_url)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
     try:
         # Load existing state
@@ -323,14 +355,18 @@ def interoception_clear_quiet() -> str:
 
         state = None
         old_passage_ids = []
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith(MARKER):
-                json_str = text[len(MARKER):].strip()
-                state = json.loads(json_str)
-                passage_id = getattr(passage, "id", None)
-                if passage_id:
-                    old_passage_ids.append(str(passage_id))
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(MARKER)]
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            json_str = text[len(MARKER):].strip()
+            state = json.loads(json_str)
+        for passage in candidates:
+            passage_id = getattr(passage, "id", None)
+            if passage_id:
+                old_passage_ids.append(str(passage_id))
 
         if not state:
             return json.dumps({
@@ -344,8 +380,8 @@ def interoception_clear_quiet() -> str:
         for passage_id in old_passage_ids:
             try:
                 client.agents.passages.delete(
-                    agent_id=agent_id,
-                    passage_id=passage_id
+                    str(passage_id),
+                    agent_id=agent_id
                 )
             except Exception:
                 pass
@@ -405,9 +441,9 @@ def interoception_boost_signal(signal: str) -> str:
         return json.dumps({"error": "LETTA_API_KEY and LETTA_AGENT_ID must be set"})
 
     try:
-        client = Letta(api_key=api_key, base_url=base_url) if base_url else Letta(api_key=api_key)
-    except TypeError:
-        client = Letta(api_key=api_key) if api_key else Letta()
+        client = _init_letta_client(api_key, base_url)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
     try:
         # Load existing state
@@ -420,14 +456,18 @@ def interoception_boost_signal(signal: str) -> str:
 
         state = {"pressures": {}}
         old_passage_ids = []
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith(MARKER):
-                json_str = text[len(MARKER):].strip()
-                state = json.loads(json_str)
-                passage_id = getattr(passage, "id", None)
-                if passage_id:
-                    old_passage_ids.append(str(passage_id))
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(MARKER)]
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            json_str = text[len(MARKER):].strip()
+            state = json.loads(json_str)
+        for passage in candidates:
+            passage_id = getattr(passage, "id", None)
+            if passage_id:
+                old_passage_ids.append(str(passage_id))
 
         if "pressures" not in state:
             state["pressures"] = {}
@@ -444,8 +484,8 @@ def interoception_boost_signal(signal: str) -> str:
         for passage_id in old_passage_ids:
             try:
                 client.agents.passages.delete(
-                    agent_id=agent_id,
-                    passage_id=passage_id
+                    str(passage_id),
+                    agent_id=agent_id
                 )
             except Exception:
                 pass
@@ -517,9 +557,9 @@ def interoception_record_outcome(signal: str, outcome: str) -> str:
         return json.dumps({"error": "LETTA_API_KEY and LETTA_AGENT_ID must be set"})
 
     try:
-        client = Letta(api_key=api_key, base_url=base_url) if base_url else Letta(api_key=api_key)
-    except TypeError:
-        client = Letta(api_key=api_key) if api_key else Letta()
+        client = _init_letta_client(api_key, base_url)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
     try:
         # Load existing state
@@ -532,14 +572,18 @@ def interoception_record_outcome(signal: str, outcome: str) -> str:
 
         state = {"pressures": {}}
         old_passage_ids = []
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith(MARKER):
-                json_str = text[len(MARKER):].strip()
-                state = json.loads(json_str)
-                passage_id = getattr(passage, "id", None)
-                if passage_id:
-                    old_passage_ids.append(str(passage_id))
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(MARKER)]
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            json_str = text[len(MARKER):].strip()
+            state = json.loads(json_str)
+        for passage in candidates:
+            passage_id = getattr(passage, "id", None)
+            if passage_id:
+                old_passage_ids.append(str(passage_id))
 
         if "pressures" not in state:
             state["pressures"] = {}
@@ -556,8 +600,8 @@ def interoception_record_outcome(signal: str, outcome: str) -> str:
         for passage_id in old_passage_ids:
             try:
                 client.agents.passages.delete(
-                    agent_id=agent_id,
-                    passage_id=passage_id
+                    str(passage_id),
+                    agent_id=agent_id
                 )
             except Exception:
                 pass
@@ -615,9 +659,9 @@ def interoception_get_signal_history(signal: str) -> str:
         return json.dumps({"error": "LETTA_API_KEY and LETTA_AGENT_ID must be set"})
 
     try:
-        client = Letta(api_key=api_key, base_url=base_url) if base_url else Letta(api_key=api_key)
-    except TypeError:
-        client = Letta(api_key=api_key) if api_key else Letta()
+        client = _init_letta_client(api_key, base_url)
+    except Exception as e:
+        return json.dumps({"status": "error", "error": str(e)})
 
     try:
         # Load state from archival
@@ -629,12 +673,15 @@ def interoception_get_signal_history(signal: str) -> str:
         items = getattr(passages, "items", passages) if passages else []
 
         state = None
-        for passage in items:
-            text = getattr(passage, "text", "")
-            if text.startswith(MARKER):
-                json_str = text[len(MARKER):].strip()
-                state = json.loads(json_str)
-                break
+        get_ts = lambda passage: getattr(passage, "updated_at", None) or getattr(passage, "created_at", None)
+
+        candidates = [p for p in items if getattr(p, "text", "").startswith(MARKER)]
+        state = None
+        if candidates:
+            latest = max(candidates, key=lambda p: get_ts(p) or "")
+            text = getattr(latest, "text", "")
+            json_str = text[len(MARKER):].strip()
+            state = json.loads(json_str)
 
         if not state:
             return json.dumps({

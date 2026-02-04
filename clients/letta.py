@@ -22,7 +22,13 @@ def get_letta_client(
     resolved_base_url = base_url or cfg.get("base_url")
     if resolved_base_url:
         client_params["base_url"] = resolved_base_url
-    return Letta(**client_params)
+    try:
+        return Letta(**client_params)
+    except TypeError:
+        client_params.pop("api_key", None)
+        if api_key or cfg.get("api_key"):
+            client_params["token"] = api_key or cfg["api_key"]
+        return Letta(**client_params)
 
 
 def get_agent_id(override: Optional[str] = None) -> str:

@@ -29,6 +29,15 @@ def bsky_list_notifications(limit: int = 20, only_new: bool = False) -> str:
     password = os.getenv("BSKY_PASSWORD")
     pds_host = os.getenv("PDS_URI", "https://bsky.social").rstrip("/")
     if not username or not password:
+        try:
+            from config_loader import get_bluesky_config
+            cfg = get_bluesky_config()
+            username = username or cfg.get("username")
+            password = password or cfg.get("password")
+            pds_host = (cfg.get("pds_uri") or pds_host).rstrip("/")
+        except Exception:
+            pass
+    if not username or not password:
         return "Error: BSKY_USERNAME and BSKY_PASSWORD must be set"
 
     try:
@@ -111,6 +120,15 @@ def bsky_get_thread(uri: str = "", depth: int = 10, parent_height: int = 80) -> 
     password = os.getenv("BSKY_PASSWORD")
     pds_host = os.getenv("PDS_URI", "https://bsky.social").rstrip("/")
     if not username or not password:
+        try:
+            from config_loader import get_bluesky_config
+            cfg = get_bluesky_config()
+            username = username or cfg.get("username")
+            password = password or cfg.get("password")
+            pds_host = (cfg.get("pds_uri") or pds_host).rstrip("/")
+        except Exception:
+            pass
+    if not username or not password:
         return "Error: BSKY_USERNAME and BSKY_PASSWORD must be set"
 
     try:
@@ -168,6 +186,15 @@ def bsky_get_profile(actor: str = "") -> str:
     username = os.getenv("BSKY_USERNAME")
     password = os.getenv("BSKY_PASSWORD")
     pds_host = os.getenv("PDS_URI", "https://bsky.social").rstrip("/")
+    if not username or not password:
+        try:
+            from config_loader import get_bluesky_config
+            cfg = get_bluesky_config()
+            username = username or cfg.get("username")
+            password = password or cfg.get("password")
+            pds_host = (cfg.get("pds_uri") or pds_host).rstrip("/")
+        except Exception:
+            pass
     if not username or not password:
         return "Error: BSKY_USERNAME and BSKY_PASSWORD must be set"
 
@@ -259,7 +286,7 @@ def bsky_mark_notification_processed(uri: str, reason: str = "replied") -> str:
 
             for passage_id in old_passage_ids:
                 try:
-                    client.agents.passages.delete(agent_id=agent_id, passage_id=passage_id)
+                    client.agents.passages.delete(passage_id, agent_id=agent_id)
                 except Exception:
                     pass
 
@@ -334,7 +361,7 @@ def bsky_mark_notifications_batch(uris: str) -> str:
 
             for passage_id in old_passage_ids:
                 try:
-                    client.agents.passages.delete(agent_id=agent_id, passage_id=passage_id)
+                    client.agents.passages.delete(passage_id, agent_id=agent_id)
                 except Exception:
                     pass
 

@@ -955,7 +955,7 @@ def delete_archival_passage(passage_id: str) -> str:
         client = Letta(api_key=api_key) if api_key else Letta()
 
     try:
-        client.agents.passages.delete(agent_id=agent_id, passage_id=passage_id)
+        client.agents.passages.delete(passage_id, agent_id=agent_id)
         return json.dumps({"success": True, "deleted_passage_id": passage_id})
     except Exception as e:
         return json.dumps({"error": f"Failed to delete passage: {e}"})

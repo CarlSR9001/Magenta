@@ -171,7 +171,13 @@ def view_core_block(block_label: str, show_line_numbers: bool = True) -> str:
 
     except Exception as e:
         # Try to suggest valid block labels
-        valid_labels = _get_valid_block_labels(client, agent_id)
+        valid_labels = []
+        try:
+            blocks = client.agents.blocks.list(agent_id=agent_id)
+            items = getattr(blocks, "items", blocks) if blocks else []
+            valid_labels = [getattr(b, "label", "") for b in items if getattr(b, "label", "")]
+        except Exception:
+            pass
         return json.dumps({
             "error": f"Block '{block_label}' not found",
             "valid_blocks": valid_labels,
@@ -250,6 +256,7 @@ def edit_core_block(
         if "." in op_str:
             op_str = op_str.split(".")[-1]
         op = op_str.lower().strip().replace("-", "_").replace(" ", "_")
+        op_for_output = op
 
         # Validate and perform operation
         if op == "replace_lines":
@@ -315,7 +322,7 @@ def edit_core_block(
                     passage = client.agents.passages.create(
                         agent_id=agent_id,
                         text=f"[Core memory backup: {block_label}]\nOperation: {operation}\nTimestamp: auto\n\n{original_value}",
-                        tags=["core_memory_backup", f"block:{block_label}", operation],
+                        tags=["core_memory_backup", f"block:{block_label}", op_for_output],
                     )
                     archived_id = str(getattr(passage, "id", "unknown"))
             except Exception as backup_err:
@@ -333,7 +340,7 @@ def edit_core_block(
         result = {
             "success": True,
             "block_label": block_label,
-            "operation": operation,
+            "operation": op_for_output,
             "original_chars": len(original_value),
             "original_lines": total_lines,
             "new_chars": len(new_value),
@@ -353,7 +360,13 @@ def edit_core_block(
 
     except Exception as e:
         # Try to suggest valid block labels
-        valid_labels = _get_valid_block_labels(client, agent_id)
+        valid_labels = []
+        try:
+            blocks = client.agents.blocks.list(agent_id=agent_id)
+            items = getattr(blocks, "items", blocks) if blocks else []
+            valid_labels = [getattr(b, "label", "") for b in items if getattr(b, "label", "")]
+        except Exception:
+            pass
         error_str = str(e).lower()
         if "not found" in error_str or "does not exist" in error_str:
             return json.dumps({
@@ -422,7 +435,13 @@ def find_in_block(block_label: str, pattern: str, use_regex: bool = False) -> st
 
     except Exception as e:
         # Try to suggest valid block labels
-        valid_labels = _get_valid_block_labels(client, agent_id)
+        valid_labels = []
+        try:
+            blocks = client.agents.blocks.list(agent_id=agent_id)
+            items = getattr(blocks, "items", blocks) if blocks else []
+            valid_labels = [getattr(b, "label", "") for b in items if getattr(b, "label", "")]
+        except Exception:
+            pass
         error_str = str(e).lower()
         if "not found" in error_str or "does not exist" in error_str:
             return json.dumps({
