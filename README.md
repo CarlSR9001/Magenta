@@ -1,190 +1,168 @@
-# Magenta (agent skeleton)
+# Magenta
 
-Minimal, reusable scaffolding for a stateful agent that talks to:
-- Letta (primary)
-- Bluesky (AT Protocol)
-- ElevenLabs
-- Audio relay service
+Magenta is a stateful, multi‑platform social agent built around Letta. It includes:
+- A guarded decision loop (observe → decide → draft → preflight → commit)
+- A local heartbeat/interoception system
+- Tooling for Bluesky and Moltbook
+- Optional voice bridges (Discord + Twilio)
 
-This is intentionally thin: only the connective tissue and examples so new agents can build quickly without inheriting Umbra-specific logic.
+This repo is the working implementation (not just a scaffold).
 
-## Quick start
-1. Copy the sample config:
-   - `cp config.example.yaml config.yaml`
-2. Fill in credentials.
-3. (Optional) Create/attach tools in Letta:
-   - `python register_tools.py --config config.yaml`
-4. (Optional) Clear all tools from a Letta agent:
-   - `python clear_tools.py --config config.yaml --agent-id <id>`
+---
 
-## What’s included
-- `config_loader.py`: single source of truth for config + env overrides.
-- `clients/`: API client helpers (Letta, Bluesky, ElevenLabs, relay audio).
-- `tools/`: example Letta tool(s) and schemas.
-- `register_tools.py`: registers tools and pushes env vars to Letta for tool execution.
-- `clear_tools.py`: detaches all tools from a Letta agent (optional delete).
-- `flow/`: observe→decide→draft→preflight→commit→postmortem orchestration primitives.
-- `run_agent.py`: minimal runner that executes a single guarded cycle.
-- `run_queue.py`: processes queued drafts (one commit max).
-- `run_autonomy.py`: autonomous loop with jitter + RNG.
-- `configure_tool_rules.py`: applies Letta tool rules for guarded flow.
-- `flow/commit_handlers.py`: Bluesky side-effect handlers used by the runner.
-- `SYSTEM_PROMPT.md`: system prompt for the Magenta agent.
+## What Magenta does
 
-## Usage snippets
+- Monitors social signals (Bluesky + Moltbook) and decides on responses.
+- Writes drafts to an outbox, then commits via tool rules.
+- Maintains local memory state, summaries, and interoception pressure.
+- Can speak and listen via Discord voice (optional) and phone calls (optional).
 
-### Letta
-```python
-from clients import get_letta_client, get_agent_id
+---
 
-client = get_letta_client()
-agent_id = get_agent_id()
-agent = client.agents.retrieve(agent_id=agent_id)
+## Repo structure
+
+- `agent.py`: core Magenta agent implementation.
+- `heartbeat_v2.py`: main interoception/heartbeat loop.
+- `flow/`: decision system + preflight/commit guards.
+- `tools/`: Letta tools (Bluesky, Moltbook, Discord, Twilio, memory).
+- `interoception/`: limbic system, signal scoring, pressure.
+- `voice/`: realtime speech bridge (Discord voice + Twilio streams).
+- `outbox/`, `state/`, `logs/`: local state + artifacts.
+- `SYSTEM_PROMPT.md`: system prompt used for Letta.
+
+---
+
+## Quick start (local)
+
+1) Create config:
+```
+cp config.example.yaml config.local.yaml
+```
+2) Fill in credentials in `config.local.yaml`.
+3) Create venv + install deps:
+```
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+```
+4) Register tools with Letta:
+```
+python register_tools.py
+python configure_tool_rules.py
+```
+5) Run a single cycle:
+```
+python run_agent.py
 ```
 
-### Bluesky
-```python
-from clients import bluesky_login
+---
 
-client = bluesky_login()
-feed = client.app.bsky.feed.get_timeline({"limit": 5})
+## Heartbeat (recommended)
+
+Systemd service for ongoing interoception + social checks:
+
+```
+# Service file is /etc/systemd/system/magenta-heartbeat.service
+systemctl status magenta-heartbeat.service
+systemctl restart magenta-heartbeat.service
 ```
 
-### ElevenLabs
-```python
-from clients import text_to_speech
-
-audio_bytes = text_to_speech("Hello from Magenta")
-with open("sample.mp3", "wb") as f:
-    f.write(audio_bytes)
+Logs:
+```
+/home/shankatsu/magenta/logs/heartbeat_v2.log
 ```
 
-### Relay audio
-```python
-from clients import relay_audio
+---
 
-result = relay_audio(text="Hello", caption="hello world")
+## Voice (optional)
+
+### Discord voice
+- `voice/discord_realtime_bridge.py` connects to a voice channel.
+- Live TTS is generated through OpenAI Realtime.
+
+Config in `voice_config.yaml`:
+- `discord_voice.guild_id`
+- `discord_voice.channel_id`
+- `openai.api_base`
+- `realtime.model` / `realtime.voice`
+
+Service:
+```
+systemctl status magenta-discord-voice.service
+systemctl restart magenta-discord-voice.service
 ```
 
-## Notes
-- Secrets can be set via `config.yaml` or env vars like `LETTA_API_KEY`, `BSKY_USERNAME`, etc.
-- This repo deliberately avoids Umbra’s bot logic so you can compose your own flow cleanly.
-- Memory writes are stored locally in `state/archival_memory.log` and `state/core_memory.log` by default.
+### Twilio phone calls
+- `voice/twilio_realtime_server.py` accepts Twilio Media Streams.
 
-## Flow usage (skeleton)
-The flow enforces a strict two-phase commit: draft + preflight, then commit (terminal).
-
-```python
-from pathlib import Path
-from flow import (
-    DecisionPolicy,
-    MemoryPolicy,
-    OutboxStore,
-    SalienceConfig,
-    Toolset,
-    AgentStateStore,
-    TelemetryStore,
-    run_once,
-)
-
-policy = DecisionPolicy(
-    salience_config=SalienceConfig(weights={"delta_u": 0.4, "risk": -0.4}),
-    j_weights={"voi": 1.0, "optionality": 0.5, "risk": 1.0, "fatigue": 1.0},
-)
-
-toolset = Toolset(outbox=OutboxStore(Path("outbox")), policy=policy, memory_policy=MemoryPolicy())
-state_store = AgentStateStore(Path("state/agent_state.json"))
-telemetry = TelemetryStore(Path("state/telemetry.jsonl"))
-
-run_once(toolset, state_store, telemetry, toolset.outbox)
+Service:
+```
+systemctl status magenta-voice-bridge.service
+systemctl restart magenta-voice-bridge.service
 ```
 
-You will want to override `Toolset.observe()` and `Toolset.propose_actions()` with your own logic.
+---
 
-See `flow/TOOL_RULES.md` for the tool-rule policy contract.
+## Tools + rules
 
-## Run the agent
-```bash
-python /home/shankatsu/magenta/run_agent.py
+Tool registration:
+```
+python register_tools.py
 ```
 
-This uses `MagentaAgent` (see `agent.py`) which:
-- Pulls recent notifications
-- Uses Letta to propose 1-3 candidate actions
-- Drafts + preflights the chosen action
-- Commits via Bluesky API if allowed
-
-## Process queued drafts
-```bash
-python /home/shankatsu/magenta/run_queue.py
+Tool rules enforcement:
+```
+python configure_tool_rules.py
 ```
 
-## Autonomous loop (no cron)
-```bash
-python /home/shankatsu/magenta/run_autonomy.py --min-seconds 45 --max-seconds 120
+Clear tools:
+```
+python clear_tools.py --agent-id <id>
 ```
 
-## Pilot bridge (drive harness + Letta admin)
-Run the pilot runner (file queue):
-```bash
-python /home/shankatsu/magenta/pilot_runner.py --follow
+---
+
+## Pilot runner (admin harness)
+
+Allows Letta admin ops and direct messages via a JSONL file queue:
+
+```
+python pilot_runner.py --follow
 ```
 
-Append commands to `state/pilot_commands.jsonl`, results land in `state/pilot_outputs.jsonl`.
+Commands go to `state/pilot_commands.jsonl` and results in `state/pilot_outputs.jsonl`.
 
-Example: fetch recent agent messages (read-only mirror)
-```json
-{"id":"msg-1","type":"letta_admin","op":"get_recent_messages","args":{"limit":20}}
-```
+---
 
-Example: clean mirror (assistant/user only)
-```json
-{"id":"msg-2","type":"letta_admin","op":"get_recent_messages_clean","args":{"limit":20}}
-```
+## Troubleshooting
 
-Example: talk to Magenta (via Letta messages)
-```json
-{"id":"talk-1","type":"letta_admin","op":"send_message","args":{"content":"Quick check-in: summarize your top 3 open commitments."}}
-```
+### “BSKY_USERNAME and BSKY_PASSWORD must be set”
+Set credentials in `config.local.yaml`, or provide env vars for the runtime process.
 
-Example: list core memory blocks
-```json
-{"id":"mem-1","type":"letta_admin","op":"list_blocks","args":{"include_content":false}}
-```
+### “MOLTBOOK_API_KEY not set”
+Set `moltbook.api_key` in `config.local.yaml` or set `MOLTBOOK_API_KEY` in the process env.
 
-Example: read a block
-```json
-{"id":"mem-2","type":"letta_admin","op":"get_block","args":{"label":"zeitgeist","line_numbers":true}}
-```
+### Outbox drafts stuck
+Use the outbox tools or run the cleanup cycle in `heartbeat_v2.py`.
 
-Example: replace lines in a block
-```json
-{"id":"mem-3","type":"letta_admin","op":"replace_block_lines","args":{"label":"zeitgeist","start_line":1,"end_line":1,"new_content":"**Active Discourse Themes (2026-02-02):**"}}
-```
+---
 
-Example: queue a draft
-```json
-{"id":"draft-1","type":"harness_action","mode":"queue","draft":{"type":"reply","target_uri":"at://...","text":"Hello","intent":"follow up","confidence":0.8,"salience":0.5,"metadata":{"reply_to":{"root":{"uri":"...","cid":"..."},"parent":{"uri":"...","cid":"..."}}}}}
-```
+## Security notes
 
-Example: direct commit (bypass preflight)
-```json
-{"id":"commit-1","type":"harness_action","mode":"commit","bypass_preflight":true,"draft":{"type":"post","text":"Quick note","intent":"pilot test","confidence":1.0,"salience":0.2}}
-```
+- Do **not** commit secrets.
+- Keep keys in `config.local.yaml` or process env.
+- Systemd services can load env files if you choose to use them, but avoid committing those files.
 
-## Upload tools + configure Letta rules
-1. Register tools with Letta:
-```bash
-python /home/shankatsu/magenta/register_tools.py --config /home/shankatsu/magenta/config.yaml
-```
-2. Apply tool rules:
-```bash
-python /home/shankatsu/magenta/configure_tool_rules.py
-```
-3. (Optional) Clear existing tools from the Magenta agent first:
-```bash
-python /home/shankatsu/magenta/clear_tools.py --config /home/shankatsu/magenta/config.yaml --agent-id agent-f7fee7dc-d199-4092-ac8c-ee863467f284
-```
+---
 
-## System prompt
-Use `SYSTEM_PROMPT.md` as the system prompt for the Letta agent.
+## Key entrypoints
+
+- `run_agent.py` — single decision cycle
+- `run_queue.py` — process queued drafts
+- `run_autonomy.py` — continuous loop (with jitter)
+- `heartbeat_v2.py` — interoception + social signal loop
+- `discord_bot.py` — Discord text bot (optional)
+
+---
+
+If you want a minimal or production‑hardened variant, open an issue or PR with the target constraints.
